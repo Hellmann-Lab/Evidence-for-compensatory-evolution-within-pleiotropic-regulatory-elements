@@ -1,0 +1,477 @@
+---
+title: "Species_openness"
+author: "Zane Kliesmete"
+date: "2023-08-17"
+output: pdf
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(ggplot2)
+libs<-c("ggplot2","ggpubr","RMySQL","tidyverse","cowplot","data.table","GenomicRanges", "patchwork", "broom", "DESeq2", "figpatch")
+
+sapply(libs, require, character.only=T)
+source("../DA_ipsc_npc/scripts/TFBS_plotting_functions_ATAC.R")
+
+tissueColors <- c( "#9E0142" ,"#D53E4F", "#F46D43", "#FDAE61", "#FFD92F" ,"#ABDDA4", "#66C2A5", "#3288BD", "#5E4FA2")
+names(tissueColors) <-  c("adrenal gland", "brain", "heart", "kidney", "large intestine", "lung", "muscle", "stomach", "thymus")
+
+specificityColors <- c( "#A3753B", "#CC9B57", "#E7CF97", "#F8EDD0", "#F7F7F7", "#D2EEEA", "#99D7CE", "#5DACA5", "#33847E")
+names(specificityColors) <-  c(1:9)
+
+regionColors <- c("#9CA578","#3288BD","#E37063")
+names(regionColors) <-  c("Enhancer", "Promoter","Expression")
+
+basic_theme<-  theme(axis.title=element_text(size=8.5),
+        axis.text = element_text(color="black", size=7),
+        #legend.title = element_text(size = 8), 
+        legend.text = element_text(size = 6.5),
+        legend.key.size = unit(0.8, "lines"),
+        legend.margin=margin(0.3,0.3,0.3,0.3),
+        legend.box.margin=margin(0.2,0.2,0.2,0.2))
+
+
+theme_set( theme_bw( base_size = 8 ) +
+             theme(legend.title = element_blank(),
+                   legend.key.size = unit(3,"mm")) )
+
+basic_theme_ins<-  theme(axis.title=element_text(size=9.5),
+                     axis.text = element_text(color="black", size=8.5),
+                     legend.title = element_text(size = 7.5), 
+                     legend.text = element_text(size = 8),
+                     legend.key.size = unit(0.5, "lines"),
+                     legend.margin=margin(0.1,0.1,0.1,0.1),
+                     legend.box.margin=margin(0.1,0.1,0.1,0.1),
+                     panel.grid.major = element_line(size = 0.35),
+                     panel.grid.minor = element_blank(),
+                     strip.text.x = element_text(size = 10))
+
+```
+
+# Focus on NPCs
+
+## ATAC-seq peak presence / absence
+
+```{r pp}
+
+stringent_set<-readRDS("../DA_ipsc_npc/RDS/jammPeaks_vs_ATACPeaks_NPC_stringent.rds") %>%
+  dplyr::mutate(openness=gsub("only","specific",openness),
+                openness=ifelse(openness=="Always open", "Conserved", openness))
+
+peakOL_plot_enhancer_NPCs <- stringent_set %>% 
+  dplyr::count(total, openness, assignment) %>%
+  group_by(assignment,total) %>% 
+  mutate(frac = n/sum(n),
+         openness = factor(openness, levels=c("Not open","Macaque-specific","Human-specific","Conserved")),
+         assignment = ifelse(assignment == "enh","Enhancer","Promoter")) %>%
+  filter(assignment == "Enhancer") %>% 
+  ggplot(aes(x=as.factor(total), y=n, fill = openness))+
+  geom_bar(position="fill", stat="identity")+
+  scale_fill_manual(values=c("#F4F4F6","#D1D1DC","#8B8BA7","#69698C")) +
+  ylab("Fraction of Enhancers")+
+  xlab("PD")
+
+peakOL_plot_promoter_NPCs <- stringent_set %>%
+  dplyr::count(total, openness, assignment) %>%
+  group_by(assignment,total) %>% 
+  mutate(frac = n/sum(n),
+         openness = factor(openness, levels=c("Not open","Macaque-specific","Human-specific","Conserved")),
+         assignment = ifelse(assignment == "enh","Enhancer","Promoter")) %>%
+  filter(assignment == "Promoter") %>% 
+  ggplot(aes(x=as.factor(total), y=n, fill = openness))+
+  geom_bar(position="fill", stat="identity")+
+  scale_fill_manual(values=c("#F4F4F6","#D1D1DC","#8B8BA7","#69698C")) +
+  ylab("Fraction of Promoters")+
+  xlab("PD")
+
+peakOL_plot_enhancer_NPCs|peakOL_plot_promoter_NPCs
+
+
+# both together in a facet_grid setting
+peakOL_plot_NPCs <- stringent_set %>% 
+  dplyr::count(total, openness, assignment) %>%
+  group_by(assignment,total) %>% 
+  mutate(frac = n/sum(n),
+         openness = factor(openness, levels=c("Not open","Macaque-specific","Human-specific","Conserved")),
+         assignment = ifelse(assignment == "enh","Enhancer","Promoter")) %>%
+  ggplot(aes(x=as.factor(total), y=n, fill = openness))+
+  geom_bar(position="fill", stat="identity")+
+  scale_fill_manual(values=c("#F4F4F6","#D1D1DC","#8B8BA7","#69698C")) +
+  ylab("Fraction of CREs")+
+  xlab("PD")+
+  facet_grid(assignment~.)+
+  guides(fill = guide_legend(nrow = 2))
+
+```
+
+## LFCs of DA and DE
+
+```{r GetLFCs}
+
+DHS_to_gene <- readRDS("../distance_to_tss/DHS_to_gene.rds") %>%
+  distinct(region_id, gene_id, total, CGI, assignment)
+jamm_forATAC_NPC_all<-readRDS("../DA_ipsc_npc/RDS/jammPeaks_vs_ATACPeaks_NPC_all.rds")
+
+
+atacDDS <- readRDS("../DA_ipsc_npc/RDS/atacDDS.rds")
+DA<-lapply( c("NPC","iPSC"), function(i){
+    tmp <- colData(atacDDS)
+    tmp <- tmp[tmp$cell_type == i,]
+    tmpdds <- DESeqDataSetFromMatrix( colData = tmp,
+                                      countData = DESeq2::counts(atacDDS)[,rownames(tmp)],
+                                      design = ~ species)
+    tmpdds <-DESeq(tmpdds)
+    results(tmpdds) %>% data.frame %>% rownames_to_column("region_id") %>% 
+      mutate(celltype = i) %>% 
+      separate_wider_delim(region_id, ".", names = c(NA, "region_id")) %>% 
+      mutate(region_id = as.numeric(region_id)) %>% 
+      inner_join(DHS_to_gene)
+}) %>% bind_rows
+
+exprdds <- readRDS("../expression_conservation/RDS/dds_clean.rds")
+DE<-lapply( c("NPC","iPSC"), function(i){
+  tmp <- colData(exprdds)
+  tmp <- tmp[tmp$Differentiation == i,]
+  tmpdds <- DESeqDataSetFromMatrix( colData = tmp,
+                                    countData = DESeq2::counts(exprdds)[,rownames(tmp)],
+                                    design = ~ Species)
+  tmpdds <-DESeq(tmpdds)
+  results(tmpdds) %>% data.frame %>% rownames_to_column("gene_id") %>% 
+    mutate(celltype = i)
+}) %>% bind_rows
+
+
+comb.lfc<- DE %>% left_join(DA, by=c("gene_id","celltype"), suffix=c("",".da"))
+
+saveRDS(comb.lfc, "../expression_conservation/RDS/DE_DA_table.rds")
+
+expr_pleio<- readRDS("../expression/summarized_expression_allTissues.rds") %>% 
+  group_by(gene_id) %>% 
+  summarise( expr_pleio = length(tissue),
+             expr_pleio = factor(expr_pleio, levels=1:9 )) 
+
+comb.lfc <- comb.lfc %>% left_join(expr_pleio)
+
+boot_ci<- function(x,n=100){
+  y <- sapply(1:n, function(i){ 
+    median( sample(x, size=length(x), replace = T), na.rm = T) }) 
+  sort(y)[ c(floor(0.05*n),ceiling(0.95*n)) ]
+}
+
+expr_LFC<-comb.lfc %>% 
+  distinct( PD=expr_pleio, gene_id, celltype, log2FoldChange, baseMean, padj) %>% 
+  drop_na() %>%  group_by(celltype,PD) %>% 
+  reframe( lfc =median(abs(log2FoldChange)),
+           level = median(baseMean),
+           ci = boot_ci(abs(log2FoldChange)) ,
+           ci_level = boot_ci(baseMean),
+           cidir= c("low","high"),
+           nDE = sum(padj<=0.1),
+           notDE = sum(padj>0.1),
+           type ="expression") %>% 
+  pivot_wider(values_from = c(ci,ci_level), names_from = cidir)
+
+      
+cre_LFC<-comb.lfc %>% 
+  distinct( PD= as.factor(total), region_id,type=assignment, 
+            celltype, log2FoldChange.da, baseMean.da, padj.da) %>% 
+  filter(region_id %in% jamm_forATAC_NPC_all$region_id[jamm_forATAC_NPC_all$openness!="Not open"]) %>%
+  drop_na() %>%  group_by(celltype,PD,type) %>% 
+  reframe( lfc =median(abs(log2FoldChange.da)),
+           level = median(baseMean.da),
+           ci = boot_ci(abs(log2FoldChange.da)) ,
+           ci_level = boot_ci(baseMean.da),
+           cidir=c("low","high"),
+           nDE = sum(padj.da<=0.1),
+           notDE = sum(padj.da>0.1)) %>% 
+    pivot_wider(values_from = c(ci,ci_level), names_from = cidir)
+
+
+LFC_sum <- bind_rows( expr_LFC, cre_LFC)
+
+```
+
+# Compare LFCs ----------------------------------------------------
+```{r plotLFCs}
+lfc_npc_summary<-LFC_sum %>% mutate(PD = as.numeric(PD),
+                   type = case_when( type == "prom" ~ "Promoter",
+                                     type == "enh" ~ "Enhancer",
+                                     type == "expression" ~ "Expression")) %>% 
+  filter(celltype == "NPC") %>% 
+  ggplot(aes(x=PD,y=lfc,ymin=ci_low,ymax=ci_high,col=type)) +
+  geom_line()+
+  geom_pointrange(size=0.3)+
+  scale_x_continuous(breaks=1:9)+
+  ylab(expression(paste("|",log[2](frac(a[H], a[M])),"|"))) +
+  scale_color_manual(values = regionColors)
+
+
+level_npc_summary<-LFC_sum %>% mutate(PD = as.numeric(PD),
+                                      type = case_when( type == "prom" ~ "Promoter",
+                                                        type == "enh" ~ "Enhancer",
+                                                        type == "expression" ~ "Expression")) %>% 
+  filter(celltype == "NPC") %>% 
+  ggplot(aes(x=PD,y=level,ymin=ci_level_low,ymax=ci_level_low,col=type)) +
+  geom_line()+
+  geom_pointrange(size=1/2)+
+  scale_x_continuous(breaks=1:9)+
+  scale_y_log10()+
+  ylab(expression(log[2](bar(a))))+
+  scale_color_manual(values = regionColors)
+
+```
+
+## Odds ratios
+
+```{r odds_npcs}
+
+# Contingency table test for enrichment of CRE-classes given DE status --------
+
+enrichTest<- comb.lfc %>% 
+  filter(region_id %in% jamm_forATAC_NPC_all$region_id[jamm_forATAC_NPC_all$openness!="Not open"]) %>%
+  group_by( total, celltype, assignment) %>% 
+  summarise(nDE = sum(padj<=0.1,na.rm=T),
+            nDA = sum(padj.da<=0.1,na.rm=T),
+            notDE = sum(padj>0.1,na.rm=T),
+            notDA = sum(padj.da>0.1,na.rm=T)) %>% 
+  pivot_longer(nDE:notDA,names_to = "cnt_type", values_to = "cnt" ) %>% 
+  group_by( total, celltype, assignment) %>% 
+  mutate( broom::tidy(fisher.test( matrix(cnt,2,2)))) %>% 
+  pivot_wider(names_from = cnt_type,values_from = "cnt") %>% 
+  drop_na() %>% ungroup %>% 
+  mutate( PD  = factor(total), 
+         type = ifelse(assignment == "enh","Enhancer","Promoter"),
+         padj = p.adjust(p.value, method = "BH"),
+         sig.code = case_when( padj <= 1e-3 ~ "***",
+                               padj <= 1e-2 ~ "**",
+                               padj <= 0.05 ~ "*",
+                               padj <= 0.1 ~ ".",
+                               T ~ "")) 
+  
+enrichTest$padj <- p.adjust(enrichTest$p.value, method = "BH")
+
+enrichTest_NPC_plot<-enrichTest  %>% 
+  filter(celltype == "NPC") %>% 
+  ggplot(aes(x=PD, y=estimate,ymin=conf.low, 
+             ymax=conf.high, 
+             label=sig.code,
+             color=type)) +
+  geom_hline(yintercept = 1,linetype=2, color="darkgrey")+
+  geom_pointrange(size=0.3)+ 
+  geom_text(size=3,nudge_x = .3, nudge_y = .07)+
+  ylab("Odds Ratio (DA vs. DE)")+
+  scale_y_log10()+
+  scale_color_manual(values=regionColors)
+
+```
+
+
+
+```{r fig2}
+
+fig2 <-   (peakOL_plot_enhancer_NPCs + theme(legend.position = "None"))/ 
+          (enrichTest_NPC_plot + theme(legend.position = "None")) | 
+          peakOL_plot_promoter_NPCs / lfc_npc_summary 
+fig2 <-   fig2 + plot_annotation(tag_levels = 'A') & theme(plot.tag=element_text(size=12,face = "bold"))
+           
+#ggsave(file="../figures/fig2_v2.pdf",fig2,width =162.5, height=100, units = "mm")
+
+```
+
+
+
+```{r new2}
+
+fig2A<-fig("../figures/npc_peaks_pleio_base.png", 
+            b_margin = ggplot2::margin(-10,0,-10,-10), link_dim = T)+
+  theme(plot.margin = margin(0,0,0,0))
+
+((fig2A/peakOL_plot_NPCs+theme(legend.position="top")+plot_layout(heights=c(0.78,1)))|((lfc_npc_summary+theme(legend.position=c(0.75,0.82)))/(enrichTest_NPC_plot+theme(legend.position="none")))) + plot_annotation(tag_levels = 'A') & theme(plot.tag=element_text(size=12,face = "bold"))
+ggsave(file="../figures/fig2_v4.pdf",width =162.5*0.75, height=105, units = "mm")
+
+```
+
+
+### Supplementary figure
+Some heatmaps and odds per CGI
+
+
+```{r odds_npcs}
+
+atacDDS <- readRDS("../DA_ipsc_npc/RDS/atacDDS.rds")
+vsdMat<-assay(varianceStabilizingTransformation(atacDDS))
+vsdMat2<-vsdMat[,grepl("NPC", colnames(vsdMat))]
+# Heatmap for most variable regions
+topVar <- order(rowVars(vsdMat2), decreasing = T)[1:1000]
+topVarMat <- vsdMat2[topVar, ]
+
+# Plot heatmap
+ann_colors = list(
+  species = c("human"="#8B8BA7","macaque"="#D1D1DC")
+)
+
+library(pheatmap)
+pdf("../figures/DA_heatmap.pdf", height = 4.5, width = 5)
+pheatmap(topVarMat,
+         cluster_rows = TRUE,
+         show_rownames = FALSE,
+         show_colnames = FALSE,
+         annotation_col = dplyr::transmute(as.data.frame(colData(atacDDS)[grepl("NPC", rownames(colData(atacDDS))),]), species=ifelse(species=="cynomolgus", "macaque", "human")),
+         annotation_colors=ann_colors,
+         cutree_rows = 1,
+         cutree_cols = 1,
+         scale = "none")
+dev.off()
+
+
+
+
+
+exprdds <- readRDS("../expression_conservation/RDS/dds_clean.rds")
+vsdMat<-assay(varianceStabilizingTransformation(exprdds))
+vsdMat2<-vsdMat[,grepl("d5|d7|d9", colnames(vsdMat))]
+# Heatmap for most variable regions
+topVar <- order(rowVars(vsdMat2), decreasing = T)[1:1000]
+topVarMat <- vsdMat2[topVar, ]
+
+pdf("../figures/DE_heatmap.pdf", height = 4.5, width = 5)
+pheatmap(topVarMat,
+         #color = heat_colors,
+         cluster_rows = TRUE,
+         show_rownames = FALSE,
+         show_colnames = FALSE,
+         annotation_col = dplyr::transmute(as.data.frame(colData(exprdds)[grepl("d5|d7|d9", rownames(colData(exprdds))),]), species=ifelse(Species=="macFas", "macaque", "human")),
+         annotation_colors=ann_colors,
+         cutree_rows = 1,
+         cutree_cols = 1,
+         scale = "none")
+dev.off()
+
+
+# Contingency table test for enrichment of CRE-classes given DE status --------
+
+enrichTest_CGI<- comb.lfc %>% 
+  filter(region_id %in% jamm_forATAC_NPC_all$region_id[jamm_forATAC_NPC_all$openness!="Not open"]) %>%
+  group_by( total, celltype, assignment, CGI) %>% 
+  summarise(nDE = sum(padj<=0.1,na.rm=T),
+            nDA = sum(padj.da<=0.1,na.rm=T),
+            notDE = sum(padj>0.1,na.rm=T),
+            notDA = sum(padj.da>0.1,na.rm=T)) %>% 
+  pivot_longer(nDE:notDA,names_to = "cnt_type", values_to = "cnt" ) %>% 
+  group_by( total, celltype, assignment, CGI) %>% 
+  mutate( broom::tidy(fisher.test( matrix(cnt,2,2)))) %>% 
+  pivot_wider(names_from = cnt_type,values_from = "cnt") %>% 
+  drop_na() %>% ungroup %>% 
+  mutate( PD  = factor(total), 
+         type = ifelse(assignment == "enh","Enhancer","Promoter"),
+         padj = p.adjust(p.value, method = "BH"),
+         sig.code = case_when( padj <= 1e-3 ~ "***",
+                               padj <= 1e-2 ~ "**",
+                               padj <= 0.05 ~ "*",
+                               padj <= 0.1 ~ ".",
+                               T ~ "")) 
+  
+enrichTest_CGI$padj <- p.adjust(enrichTest_CGI$p.value, method = "BH")
+
+enrichTest_NPC_CGI_plot_enh<-enrichTest_CGI  %>% 
+  filter(celltype == "NPC", assignment =="enh") %>% 
+  ggplot(aes(x=PD, y=estimate,
+             ymin=conf.low, 
+             ymax=conf.high, 
+             label=sig.code,
+             color=type,
+             shape=CGI)) +
+  geom_hline(yintercept = 1,linetype=2, color="darkgrey")+
+  geom_pointrange(size=0.3)+ 
+  geom_text(size=3,nudge_x = .3, nudge_y = .07)+
+  ylab("Odds Ratio (DA vs. DE)")+
+  scale_color_manual(values=regionColors)+facet_grid(.~type)+
+  guides(colour = "none")+
+  theme(legend.position = c(0.2,0.8))
+
+enrichTest_NPC_CGI_plot_prom<-enrichTest_CGI  %>% 
+  filter(celltype == "NPC", assignment =="prom") %>% 
+  ggplot(aes(x=PD, y=estimate,
+             ymin=conf.low, 
+             ymax=conf.high, 
+             label=sig.code,
+             color=type,
+             shape=CGI)) +
+  geom_hline(yintercept = 1,linetype=2, color="darkgrey")+
+  geom_pointrange(size=0.3)+ 
+  geom_text(size=3,nudge_x = .3, nudge_y = .07)+
+  ylab("Odds Ratio (DA vs. DE)")+
+  #scale_y_log10()+
+  scale_color_manual(values=regionColors)+facet_grid(.~type)+
+  guides(colour = "none")+
+  theme(legend.position = "none")
+
+
+library(ggplotify)
+
+sup2A<-fig("../figures/DA_heatmap.pdf", b_margin = ggplot2::margin(-10,0,-10,-10), 
+            link_dim = T)+ theme(plot.margin = margin(0,0,0,0))
+
+sup2B<-fig("../figures/DE_heatmap.pdf", b_margin = ggplot2::margin(-10,0,-10,-10), 
+            link_dim = T)+ theme(plot.margin = margin(0,0,0,0))
+
+
+ggsave("../figures/SuplFig2_combined.pdf", (sup2A | sup2B) / plot_grid(enrichTest_NPC_CGI_plot_enh, enrichTest_NPC_CGI_plot_prom, scale = 0.95, labels = c("","D"), label_size = 12) + plot_layout(heights = c(1,0.85)) + plot_annotation(tag_levels = 'A') & theme(plot.tag=element_text(size=12,face = "bold")), height = 4.5, width = 5)
+
+```
+
+
+
+
+
+
+## Cluster human NPC samples within tissue samples based on peaks
+
+```{r peak_clusters}
+
+jamm_DNase_binary<-readRDS("../general/region_summary/jamm_region_info_full.rds") %>%
+  dplyr::select(region_id, adrenal_gland, brain, heart, kidney, large_intestine, lung, muscle, stomach, thymus, total)
+  
+
+hum<-stringent_set %>% filter(openness %in% c("Human-specific","Conserved")) %>%
+  pull(region_id)
+
+mac<-stringent_set %>% filter(openness %in% c("Macaque-specific","Conserved")) %>%
+  pull(region_id)
+
+tissues_NPC_peaks<-jamm_DNase_binary %>%
+  filter(total!=9) %>%
+  dplyr::select(-total) %>%
+  dplyr::mutate(`human NPCs` = ifelse(region_id %in% hum, 1, 0),
+                `macaque NPCs` = ifelse(region_id %in% mac, 1, 0)) %>%
+  column_to_rownames("region_id") 
+
+
+colnames(tissues_NPC_peaks)<-gsub("_"," ", colnames(tissues_NPC_peaks))
+mat<-t(as.matrix(tissues_NPC_peaks))
+
+## Dendrogram
+
+#method: binary: The vectors are regarded as binary bits, so non-zero elements are ‘on’ and zero elements are ‘off’. The distance is the proportion of bits in which only one is on amongst those in which at least one is on, i.e. (union - intersect)/union
+
+dist_mat <- dist(mat, method = 'binary')
+hclust_avg <- hclust(dist_mat, method = 'complete')
+pdf("../figures/dendro_NPCs.pdf", height = 4, width = 5)
+plot(hclust_avg, cex=0.8)
+dev.off()
+
+
+dendro<- ggdraw() + 
+  cowplot::draw_image(magick::image_read_pdf("../figures/dendro_NPCs_crop.pdf"))+
+  theme(plot.margin = unit(c(0, 0,0,0), "cm"))
+
+plot_grid((sup2A | sup2B) / plot_grid(enrichTest_NPC_CGI_plot_enh, enrichTest_NPC_CGI_plot_prom, scale = 0.95, labels = c("","D"), label_size = 12)+ 
+  plot_layout(heights = c(1,0.85)) + plot_annotation(tag_levels = 'A') & theme(plot.tag=element_text(size=12,face = "bold")),  
+  dendro, ncol=1, rel_heights=c(1,0.33), labels = c("","E"), label_size =12)
+ggsave("../figures/SuplFig2_combined_withDendro.pdf", height = 7, width = 5)
+
+```
+
+

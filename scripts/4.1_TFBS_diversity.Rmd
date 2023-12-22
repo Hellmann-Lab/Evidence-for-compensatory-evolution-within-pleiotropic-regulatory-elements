@@ -1,0 +1,438 @@
+---
+title: "TFBS"
+author: "Zane Kliesmete"
+date: '2023-02-26'
+output: pdf_document
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+libs<-c("ggplot2","ggpubr","RMySQL","tidyverse","cowplot","data.table","GenomicRanges", "patchwork", "broom", "RColorBrewer")
+sapply(libs, require, character.only=T)
+
+tissueColors <- c( "#9E0142" ,"#D53E4F", "#F46D43", "#FDAE61", "#FFD92F" ,"#ABDDA4", "#66C2A5", "#3288BD", "#5E4FA2")
+names(tissueColors) <-  c("adrenal gland", "brain", "heart", "kidney", "large intestine", "lung", "muscle", "stomach", "thymus")
+
+specificityColors <- c( "#A3753B", "#CC9B57", "#E7CF97", "#F8EDD0", "#F7F7F7", "#D2EEEA", "#99D7CE", "#5DACA5", "#33847E")
+names(specificityColors) <-  c(1:9)
+
+regionColors <- c("#9CA578","#3288BD")
+names(regionColors) <-  c("Enhancer", "Promoter")
+
+DA_colors<-c("#AEAEC2","#606080")
+names(DA_colors)<-c("Not conserved", "Conserved")
+
+basic_theme<-  theme(axis.title=element_text(size=8.5),
+        axis.text = element_text(color="black", size=7),
+        #legend.title = element_text(size = 8), 
+        legend.text = element_text(size = 6.5),
+        legend.key.size = unit(0.8, "lines"),
+        legend.margin=margin(0.3,0.3,0.3,0.3),
+        legend.box.margin=margin(0.2,0.2,0.2,0.2))
+
+
+basic_theme_ins<-  theme(axis.title=element_text(size=9.5),
+                     axis.text = element_text(color="black", size=8.5),
+                     legend.title = element_text(size = 7.5), 
+                     legend.text = element_text(size = 8),
+                     legend.key.size = unit(0.5, "lines"),
+                     legend.margin=margin(0.1,0.1,0.1,0.1),
+                     legend.box.margin=margin(0.1,0.1,0.1,0.1),
+                     panel.grid.major = element_line(size = 0.35),
+                     panel.grid.minor = element_blank(),
+                     strip.text.x = element_text(size = 10))
+
+basic_theme_ins2<-  theme(axis.title=element_text(size=8),
+                         axis.text = element_text(color="black", size=7),
+                         legend.title = element_text(size = 7.3), 
+                         legend.text = element_text(size = 7),
+                         legend.key.size = unit(0.5, "lines"),
+                         legend.margin=margin(0,0,0,0),
+                         legend.box.margin=margin(0,0,0,0),
+                         legend.background = element_blank(), 
+                         legend.box.background = element_blank(),
+                         panel.grid.major = element_line(size = 0.35),
+                         panel.grid.minor = element_blank(),
+                         strip.text = element_text(size = 8))
+
+```
+
+## Load data
+
+```{r dat}
+
+source("../DA_ipsc_npc/scripts/TFBS_plotting_functions_ATAC.R")
+source("../DA_ipsc_npc/scripts/TFBS_analysis_functions_ATAC.R")
+source("tf_functions.R")
+
+dnase_jamm_long<-readRDS("../general/region_summary/jamm_per_tissue.rds") %>%
+  mutate(region_id = as.factor(region_id))
+
+jamm_region_info_full<-readRDS("../general/region_summary/jamm_region_info_full.rds")
+DHS_to_gene<-readRDS("../distance_to_tss/DHS_to_gene.rds") %>%
+    mutate(assignment=gsub("enh","Enhancer",assignment),
+           assignment=gsub("prom","Promoter",assignment),
+           total = as.factor(total),
+           region_id = as.factor(region_id))
+
+# ok, no unambiguosly assigned region
+DHS_to_gene %>% group_by(region_id) %>% summarise(n=length(unique(assignment))) %>% filter(n>1)
+
+# select only similar-length orthologues without Ns (for the DA stuff)
+jammSeq_inATAC<-readRDS("../DA_ipsc_npc/RDS/jamm_inATAC.rds") %>% 
+  filter(similar_width=="yes", Ns_hg38==0, Ns_macFas6==0) %>% ungroup()
+
+```
+
+## TF EXPRESSION 
+
+```{r exprTF}
+
+expressedTFs_tissues<-readRDS("../DA_ipsc_npc/cbust/expressedTFs_inTissues.rds")
+
+n_tissues_expressedTFs<-readRDS("../expression/summarized_expression_allTissues.rds") %>%
+  filter(gene_id %in% expressedTFs_tissues$gene_id) %>%
+  #inner_join(expressedTFs_tissues) %>%
+  dplyr::group_by(gene_id) %>%
+  dplyr::mutate(cnt=length(gene_id)) %>% 
+  dplyr::ungroup() %>% 
+  dplyr::count(tissue,cnt) %>% dplyr::filter(cnt != 0)
+
+             
+p_TF_expr<-ggplot(n_tissues_expressedTFs %>% mutate(tissue = gsub("_"," ",tissue)),
+                  aes(x=reorder(tissue,n),y=n,fill=forcats::fct_rev(as.factor(cnt)))) + 
+       geom_bar(stat="identity")+
+       scale_fill_brewer(palette = "BrBG", direction = -1, name="Expression\nPD")+
+       coord_flip()+
+       ylab( "# expressed TFs" )+
+       theme_bw()+
+  basic_theme_ins2+
+  theme(#legend.position = "bottom",
+        axis.title.y = element_blank(),
+        plot.margin = unit(c(5.5,1,5.5,5.5), "pt"),
+        legend.spacing.x = unit(1,"mm"))
+
+ggsave("../figures/TF_expression_PD.pdf", height = 4*0.8, width = 5*0.8)
+
+```
+
+
+## DIVERSITY
+
+```{r div}
+# enh/prom
+
+#dd_exprTissues <-  data.table::fread("../DA_ipsc_npc/cbust/topNmotifs_exprTissues_unfiltered_dt.csv")
+# top 10% ####
+#dd_10perc_exprTissues_filt<- dd_exprTissues[ minminRNK<=ceiling(nMotif*.1) ][ ,minminRNK:=NULL ][,nMotif:=NULL]
+#data.table::fwrite(dd_10perc_exprTissues_filt, "../DA_ipsc_npc/cbust/top10perc_motifs_exprTissues_dt.csv")
+
+dd_10perc_exprTissues_filt<-data.table::fread("../DA_ipsc_npc/cbust/top10perc_motifs_exprTissues_dt.csv")
+
+dd_10perc_exprTissues<- dd_10perc_exprTissues_filt %>%
+  calculate_per_region_TF_stats() %>%
+  mutate(region_id = as.factor(region_id)) 
+
+
+TFBS_enhprom<-dd_10perc_exprTissues %>% 
+  inner_join(DHS_to_gene %>% dplyr::select(region_id, assignment, total) %>% distinct()) 
+
+ymin<-60
+ymax<-220
+
+p_div1 <- ggline(TFBS_enhprom %>% mutate(label="TFBS diversity:"),
+                 x = "total", y = "diversityH", 
+                 color = "assignment", palette = c("#9CA578","#3288BD"),
+                 add = "mean_se", point_size=0.00001, 
+                 plot_type="l", size = 0.7) +
+  theme_bw()+
+  basic_theme_ins2+
+  ylab(expression("Diversity ("~e^H~")"))+
+  xlab("PD")+
+  #facet_grid(.~label)+
+  theme(legend.title = element_blank(), legend.position = c(0.8, 0.14))
+
+
+p_div1<-ggpar(p_div1, ylim=c(ymin,ymax))+
+  theme(legend.title = element_blank())
+
+
+# per tissue
+TFBS_tissues<-label_tissue(dd_10perc_exprTissues, dnase_jamm_long) %>%
+  mutate(Tissue = gsub("_", " ", Tissue))
+
+
+p_div2 <- ggline(TFBS_tissues %>% mutate(label="Per tissue"), 
+                 x = "total", y = "diversityH", 
+                 color = "Tissue", palette = tissueColors,
+                 add = "mean", 
+                 plot_type="l",
+                 size = 0.6) +
+  theme_bw()+
+  basic_theme_ins2+
+  xlab("PD")+
+  facet_grid(.~label)+
+  theme(legend.position = c(0.8, 0.29))
+
+p_div2<-ggpar(p_div2, ylim=c(ymin,ymax))+
+  theme(legend.title = element_blank(),
+        axis.text.y = element_blank(),
+        axis.title.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        legend.position = "none")
+
+
+diversity_plots<-cowplot::plot_grid(p_div1, p_div2, labels=c("B","C"), label_size = 16) #need to scale both plots the same.. ooor bind?
+```
+
+
+## TF vs MOTIF ENRICHMENT ANALYSIS
+
+### Do PD ranking per TF per tissue
+
+```{r PD_rank_per_tissue}
+
+dd_perMotif_tissues<-dd_10perc_exprTissues_filt %>%
+  inner_join(jamm_region_info_full %>% distinct(region_id, total)) %>%
+  dplyr::mutate(region_id = as.factor(region_id)) 
+
+expressedInTissue<-readRDS("../expression/summarized_expression_allTissues.rds")
+
+
+tissues_list<-lapply(unique(expressedInTissue$tissue), function(tis){
+  
+  sel_cres<-readRDS("../distance_to_tss/DHS_to_gene.rds") %>% filter(tissue == tis)
+  ranking_by_abundance(tis = tis, 
+                       reg_id_selection = sel_cres$region_id, 
+                       dd = dd_perMotif_tissues) %>% 
+    mutate(tissue = tis)
+})
+
+names(tissues_list)<-unique(expressedInTissue$tissue)
+
+combined_ranks_all<-bind_rows(tissues_list) %>% 
+  filter(rank == 1) %>%  #, total %in% c(1,9)) %>%
+  group_by(cluster_id_or_motif_name, total) %>%
+  dplyr::summarise(n = length(total),
+                   avr_prop = mean(prop_CREs))
+
+combined_ranks_all %>% filter(total==9, n==9) %>% arrange(desc(avr_prop)) %>% View
+
+library(JASPAR2020)
+library(TFBSTools)
+seqLogo(toICM(getMatrixByID(JASPAR2020, ID = "MA0741.1")))
+seqLogo(toICM(getMatrixByID(JASPAR2020, ID = "MA1512.1")))
+seqLogo(toICM(getMatrixByID(JASPAR2020, ID = "MA0599.1")))
+seqLogo(toICM(getMatrixByID(JASPAR2020, ID = "MA1122.1")))
+seqLogo(toICM(getMatrixByID(JASPAR2020, ID = "MA1122.1")))
+seqLogo(toICM(getMatrixByID(JASPAR2020, ID = "MA0259.1")))
+seqLogo(toICM(getMatrixByID(JASPAR2020, ID = "MA0162.4")))
+
+
+
+
+tissue_pd1<-bind_rows(tissues_list) %>% 
+  filter(rank ==1, total == 1, cluster_id_or_motif_name %in% combined_ranks_all$cluster_id_or_motif_name[combined_ranks_all$total==1 & combined_ranks_all$n==1]) %>%
+  group_by(cluster_id_or_motif_name, total, tissue) %>%
+  dplyr::summarise(avr_prop = mean(prop_CREs))
+  #dplyr::select(cluster_id_or_motif_name, total, tissue)
+
+#brain: NEUROG2
+seqLogo(toICM(getMatrixByID(JASPAR2020, ID = "MA1642.1")))
+seqLogo(toICM(getMatrixByID(JASPAR2020, ID = "MA1109.1")))
+seqLogo(toICM(getMatrixByID(JASPAR2020, ID = "MA0668.1")))
+seqLogo(toICM(getMatrixByID(JASPAR2020, ID = "MA0678.1")))
+
+
+
+combined_ranks_all_wide<-combined_ranks_all %>%
+  # prevent the same TF appearing multiple times
+  pivot_wider(id_cols="cluster_id_or_motif_name", names_from = "total", 
+              values_from = "n", names_prefix = "PD") %>%
+  dplyr::select(cluster_id_or_motif_name, PD1, PD9) %>%
+  left_join(tissue_pd1 %>% dplyr::select(-total)) %>%
+  dplyr::mutate(tissue_original=tissue,
+                tissue=case_when(!is.na(tissue) ~ paste0("PD1: ", tissue),
+                                 !is.na(PD9) & PD9==9 ~ "PD9: all tissues",
+                                 T ~ "other"),
+                tissue=gsub("_"," ", tissue),
+                PD1 = ifelse(is.na(PD1),0,PD1),
+                PD9 = ifelse(is.na(PD9),0,PD9))
+  
+```
+
+
+### Plot stripes and pie chart of enrichment
+
+```{r stripes}
+
+library(readxl)
+stripes<-read_excel("../DA_ipsc_npc/stripeTF/1-s2.0-S1097276522006128-mmc2.xlsx", sheet = 5,
+                    skip=1) %>% filter(`Percentage of total samples...7`>=0.9) %>% pull(`Human Stripe Factors`)
+
+pioneers<-c("ASCL1", "CEBPA", "EBF1", "ESRRB", "FOXA1", "GATA1", "GATA3", "GATA4", "AR", "KLF4", "NEUROD1", "NRF1", "POU5F1", "TP53", "PAX7", "PU.1")
+
+
+combined_ranks_all2<-combined_ranks_all_wide %>%
+  dplyr::mutate(TF = stringr::word(cluster_id_or_motif_name,2,2,"_"),
+                TF = toupper(gsub("[(].*","",TF)),
+                motif_ID = stringr::word(cluster_id_or_motif_name,1,1,"_")) %>%
+  separate_rows(TF, sep="::") %>%
+  dplyr::mutate(is_stripe = ifelse(TF %in% stripes, T, F),
+                is_pioneer = ifelse(TF %in% pioneers, T, F),
+                is_PD9 = ifelse(!is.na(PD9) & PD9==9, T, F),
+                is_PD1 = ifelse(!is.na(PD1) & PD1==1, T, F),
+                padj_PD9 = ifelse(is_PD9, 0.01, 1),
+                padj_PD1 = ifelse(is_PD1, 0.01, 1),
+                min_padj = min(padj_PD9, padj_PD1)) %>%
+  as_tibble() %>%
+  inner_join(expressedTFs_tissues[,c("motif_ID","gene_id")] %>% 
+               distinct(gene_id, .keep_all=T)) %>%
+  dplyr::group_by(gene_id) %>%
+  dplyr::slice_min(min_padj, n=1, with_ties = F) %>%
+  relocate(gene_id) %>%
+  ungroup() %>%
+  as.data.frame() 
+
+saveRDS(combined_ranks_all2, "../DA_ipsc_npc/cbust/RDS/motif_PD_ranks.rds")
+
+
+
+combined_ranks_all_short<-combined_ranks_all2 %>%
+  distinct(TF, is_stripe, is_pioneer, .keep_all = T)
+
+table(combined_ranks_all_short$is_stripe, combined_ranks_all_short$is_PD9)
+fisher.test(matrix(c(26,20,55,448), ncol = 2))
+
+table(combined_ranks_all_short$is_stripe, combined_ranks_all_short$is_PD1)
+fisher.test(matrix(c(8,38,142,361), ncol = 2))
+
+
+table(combined_ranks_all_short$is_pioneer, combined_ranks_all_short$is_PD9)
+
+
+p_stripe<-combined_ranks_all2 %>%
+  ggplot(aes(x = is_PD9, fill=is_stripe))+geom_bar(position = "fill", width=1, color="grey50", lwd=0.2)+
+  theme_bw()+
+  basic_theme_ins2+
+  scale_x_discrete(expand=c(0,0))+
+  scale_y_reverse(expand=c(0,0), labels = scales::percent)+
+  scale_fill_manual(values=c("#FAF0D2","#FACEAA"))+
+  xlab("PD9-enriched")+
+  ylab("")+
+  labs(fill="Stripe TF")+
+  theme(legend.position = "top",
+        axis.text.y = element_text(margin=margin(l=-6)))+
+  guides(fill = guide_legend(nrow=2, title.position="top", title.hjust = 0.5))
+  
+
+
+
+tissueColors_plus <- c( "#9E0142" ,"#D53E4F", "#F46D43", "#FDAE61", "#FFD92F" ,"#ABDDA4", "#66C2A5", "#3288BD", "#5E4FA2", "#33847E", "grey90")
+names(tissueColors_plus) <-  c("PD1: adrenal gland", "PD1: brain", "PD1: heart", "PD1: kidney", "PD1: large intestine", "PD1: lung", "PD1: muscle", "PD1: stomach", "PD1: thymus", "PD9: all tissues", "other")
+
+
+combined_ranks_all_wide$tissue<-factor(combined_ranks_all_wide$tissue, levels=c("PD9: all tissues","PD1: adrenal gland", "PD1: brain", "PD1: heart", "PD1: kidney", "PD1: large intestine", "PD1: lung", "PD1: muscle", "PD1: stomach", "PD1: thymus","other"))
+
+p_pie<-combined_ranks_all_wide %>% group_by(tissue) %>%
+  dplyr::summarise(n=length(tissue)) %>%
+  ggplot(aes(x="", y=n, fill=tissue)) +
+  geom_bar(stat="identity", width=1, color="white") +
+  coord_polar("y", start=0) +
+  theme_void()+
+  #basic_theme_ins+
+  scale_fill_manual(values=tissueColors_plus)+
+  scale_y_reverse()+
+  labs(fill="PD-motif\nenrichment")+
+  theme(legend.position = "left",
+        legend.title = element_text(size = 7.5), 
+        legend.text = element_text(size = 7),
+        legend.key.size = unit(0.5, "lines"),
+        legend.margin=margin(0.1,0,0.1,0.1),
+        legend.box.margin=margin(0.1,0,0.1,0.1),
+        plot.margin = unit(c(0, 0, 0,0), "cm"))
+
+```
+
+
+## TopGO enrichments
+
+```{r topgo}
+
+#PD9 without tissue-spec expression selection
+ranks_PD9_allTissues<-ranking_by_abundance(reg_id_selection = jamm_region_info_full$region_id, 
+                                           dd = dd_perMotif_tissues)
+
+topGO_PD9_allTissues<-ranks_to_topGO(ranked=ranks_PD9_allTissues,
+                                     PD = 9,
+                                     FC = 1,
+                                     PD_filt = combined_ranks_all_wide$cluster_id_or_motif_name[combined_ranks_all_wide$PD9==9])
+
+
+topGO_PD9_allTissues$topGO_PD # very redundant..
+topGO_PD9_allTissues$cnet_PD
+
+p_PD9<-plot_topGO(topGO_PD9_allTissues$topGO_PD %>% 
+                    dplyr::mutate(Term = sapply(Term, function(x) 
+                      paste(strwrap(x, 35), collapse = "\n"))), p_cutoff = 0.05, top_n = 5)
+
+
+
+# tissue-specific ones
+tissues_list_solo<-lapply(unique(expressedInTissue$tissue), function(tis){
+  
+  sel_cres<-readRDS("../distance_to_tss/DHS_to_gene.rds") %>% filter(tissue == tis)
+  sel_motifs<-combined_ranks_all_wide %>% 
+    dplyr::filter(PD1==1 & grepl(tis,tissue_original)) %>%
+    dplyr::pull(cluster_id_or_motif_name)
+  
+  print(length(sel_motifs))
+  
+  ranks_to_topGO(tis = tis, 
+                 ranked = tissues_list[[tis]],
+                 PD = 1,
+                 FC = 1,
+                 PD_filt = sel_motifs)
+})
+
+names(tissues_list_solo)<-unique(expressedInTissue$tissue)
+
+tissues_list_solo$adrenal_gland$cnet_PD #i guess ok?
+tissues_list_solo$brain$cnet_PD #good
+tissues_list_solo$kidney$cnet_PD
+tissues_list_solo$muscle$cnet_PD #good
+tissues_list_solo$heart$cnet_PD #kinda
+tissues_list_solo$stomach$cnet_PD #good
+tissues_list_solo$large_intestine$cnet_PD #i guess
+tissues_list_solo$thymus$cnet_PD
+tissues_list_solo$lung$cnet_PD #good
+
+```
+
+
+## Put together the current stuff for new fig2
+
+```{r final}
+
+p1<-plot_grid(p_TF_expr+basic_theme_ins2, NULL, p_div1, ncol=3, rel_widths = c(1.4,0.08,0.95), labels=c("A","","B"), label_size = 12)
+p2<-plot_grid(p_pie, 
+              p_PD9 + theme(plot.margin = unit(c(0.3, 0.1, 0,0), "cm"),
+                            plot.title = element_text(color = specificityColors[9],face="bold", size=8))+
+                ggtitle("PD9: all tissues"), rel_widths = c(1,0.9),
+              labels=c("C","D"), label_size = 12)
+
+p3<-plot_grid(tissues_list_solo$brain$cnet_PD+
+                theme(legend.position = "none",plot.title = element_text(color = tissueColors["brain"],face="bold", hjust=0.15))+ ggtitle("PD1: brain"),
+              tissues_list_solo$heart$cnet_PD+theme(plot.title = element_text(color = tissueColors["heart"],face="bold", hjust=0.15))+ggtitle("PD1: heart"),
+              label_size = 12, labels=c("E","F"), label_y = 1.05)
+
+p_all<-plot_grid(p1,p2,p3, ncol=1, rel_heights = c(0.95,1,1))
+ggsave(file="../figures/fig2_TFBS.pdf", p_all, width =162.5*0.9, height=160, units = "mm")
+ggsave(file="../figures/fig2_TFBS2.pdf", p_all, width =162.5*0.87, height=160, units = "mm")
+
+```
+
+
+

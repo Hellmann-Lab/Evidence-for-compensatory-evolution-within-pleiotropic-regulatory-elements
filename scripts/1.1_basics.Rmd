@@ -1,0 +1,232 @@
+---
+title: "Regulatory pleiotropy"
+author: "Zane Kliesmete"
+date: "03/11/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+libs<-c("RMySQL","tidyverse","cowplot","data.table","GenomicRanges","plyranges")
+sapply(libs, require, character.only=T)
+
+source("helper_functions.R")
+
+tissueColors <- c( "#9E0142" ,"#D53E4F", "#F46D43", "#FDAE61", "#FFD92F" ,"#ABDDA4", "#66C2A5", "#3288BD", "#5E4FA2")
+names(tissueColors) <-  c("adrenal gland", "brain", "heart", "kidney", "large intestine", "lung", "muscle", "stomach", "thymus")
+
+specificityColors <- c( "#A3753B", "#CC9B57", "#E7CF97", "#F8EDD0", "#F7F7F7", "#D2EEEA", "#99D7CE", "#5DACA5", "#33847E")
+names(specificityColors) <-  c(1:9)
+
+
+regionColors <- c("#9CA578","#3288BD")
+names(regionColors) <-  c("enhancer", "promoter")
+
+basic_theme<-  theme(legend.key.size = unit(3, "mm"),
+        legend.margin=margin(0.3,0.3,0.3,0.3),
+        legend.box.margin=margin(0.2,0.2,0.2,0.2))
+
+
+basic_theme_ins<-  theme(axis.title=element_text(size=8.5),
+                     axis.text = element_text(color="black", size=7),
+                     legend.title = element_text(size = 7.5), 
+                     legend.text = element_text(size = 6),
+                     legend.key.size = unit(0.5, "lines"),
+                     legend.margin=margin(0.1,0.1,0.1,0.1),
+                     legend.box.margin=margin(0.1,0.1,0.1,0.1),
+                     panel.grid.major = element_line(size = 0.35),
+                     panel.grid.minor = element_blank())
+
+```
+
+## Getting and combining region information from the SQL database
+
+We get all the important information on our CREs and save that as RDS files for all analyses.
+
+```{r sql}
+myDriver=dbDriver("MySQL")
+con=dbConnect(myDriver, host="chimp.anthro.bzm",username="zane",password="zanezane", dbname="peters_stuff")
+#dbListTables(con)
+
+#generate jamm region info full
+jamm_alignment_region_info<-dbGetQuery(con, "SELECT * from jamm_alignment_region_info WHERE species='Homo_sapiens'")
+jamm_region_identifiers<-dbGetQuery(con, "SELECT * from jamm_region_identifiers")
+saveRDS(jamm_region_identifiers, "../general/region_summary/jamm_region_identifiers.rds")
+
+jamm_DNase_binary<-dbGetQuery(con, "SELECT * FROM jamm_DNase_binary")
+saveRDS(jamm_DNase_binary, "../general/region_summary/jamm_DNase_binary.rds")
+
+
+
+jamm_region_info_full<-left_join(jamm_region_identifiers, jamm_alignment_region_info, by=c("region_id", "chromosome"="sequence_chromosome", "start"="sequence_start", "end"="sequence_end")) %>%
+  left_join(jamm_DNase_binary %>% dplyr::select(-row_names)) %>%
+  mutate(chromosome=paste0("chr",chromosome)) %>% 
+  dplyr::filter(start < end & end - start<=5000) %>%
+  dplyr::mutate(CGI=ifelse(GC_content>=0.5 & CpG_obs_exp>=0.6, "CGI", "noCGI"))
+
+write.table(jamm_region_info_full[,1:3], "../general/bed/all_DHS.bed", col.names = F, row.names = F, quote = F, sep = "\t")
+
+saveRDS(jamm_region_info_full, "../general/region_summary/jamm_region_info_full.rds")
+
+
+# save the per tissue region id annotation
+dnase_jamm_long<-dbGetQuery(con, "SELECT * FROM jamm_DNase_binary") %>% 
+  dplyr::select(-row_names) %>%
+  gather(tissue,present,-region_id, -total) %>%
+  filter(present==1) %>%
+  mutate(PD_tissue=paste0(total,"_",tissue))
+
+saveRDS(dnase_jamm_long, "general/region_summary/jamm_per_tissue.rds")
+
+```
+
+## Pairwise overlaps between peaks within a region 
+
+```{r peak_overlap}
+
+jamm_peaks<-dbGetQuery(con, "SELECT * from jamm_peaks") %>%
+  mutate(chromosome=paste0("chr",chromosome)) %>%
+  filter(region_id %in% jamm_region_info_full$region_id)
+saveRDS(jamm_peaks, "../general/region_summary/jamm_peaks.rds")
+
+write.table(jamm_peaks[,c(1:3,9,10)], "../general/bed/all_peaks_ids.bed", col.names = F, row.names = F, quote = F, sep = "\t")
+write.table(jamm_region_info_full[,c(1:4,25)], "../general/bed/all_DHS_ids.bed", col.names = F, row.names = F, quote = F, sep = "\t")
+
+system("sbatch --wrap='bedtools coverage -d -a ../general/bed/all_DHS_ids.bed -b ../general/bed/all_peaks_ids.bed > ../general/bed/peak_coverage.bed'")
+
+jamm_peaks_gr<-jamm_peaks %>% dplyr::rename(seqnames=chromosome) %>% as_granges()
+
+hits<-findOverlaps(jamm_peaks_gr, minoverlap = 2) 
+overlaps <- pintersect(jamm_peaks_gr[queryHits(hits)], jamm_peaks_gr[subjectHits(hits)], ignore.strand=T)
+
+hits_overlaps<-data.frame(hits, width(overlaps)) %>% 
+  left_join(jamm_peaks %>% rownames_to_column("queryHits") %>% 
+              mutate(queryHits=as.integer(queryHits)) %>% 
+              dplyr::select(queryHits,start, end, tissue, region_id) %>%
+              dplyr::rename(peak_start=start, peak_end=end)) %>%
+  left_join(jamm_peaks %>% rownames_to_column("subjectHits") %>%
+              mutate(subjectHits=as.integer(subjectHits)) %>% 
+              dplyr::select(subjectHits, tissue, region_id), 
+            by=c("subjectHits","region_id")) %>%
+  inner_join(jamm_region_info_full[,c("region_id","total","start","end")]) %>%
+  mutate(total_length=end-start,
+         peak_length=peak_end-peak_start)
+
+
+hits_overlaps_filt<-hits_overlaps %>%
+  filter(tissue.x!=tissue.y) %>%
+  mutate(perc_overlap_region=(width.overlaps.-1)/total_length,
+         perc_overlap_peak=(width.overlaps.-1)/peak_length)
+
+```
+
+## Tissue peak widths
+```{r}
+all_jamm_peaks<-left_join(jamm_peaks, jamm_region_info_full %>% 
+                        dplyr::select(region_id, total),by="region_id")
+
+
+#mean length per peak ####
+list_peaks_per_tissue<-list()
+per_tissue_per_peak_summary<-function(){
+  
+  for (i in c("adrenal_gland", "brain", "heart", "kidney", "large_intestine", "lung", "muscle", "stomach", "thymus")){
+    
+    jamm_peaks_tissue<-all_jamm_peaks[all_jamm_peaks$tissue==i,]
+    jamm_region_summary_tissue<-jamm_peaks_tissue %>% 
+      group_by(total) %>%
+      dplyr::mutate(length=end-start) %>%
+      dplyr::summarize(median_length=median(length), 
+                       mean_length=mean(length), 
+                       sem_length=sd(length)/sqrt(mean(length))) %>%
+      dplyr::mutate(tissue=paste0(i),
+                    total=as.factor(total))
+    list_peaks_per_tissue[[i]]<-jamm_region_summary_tissue
+  }
+  return(list_peaks_per_tissue)
+}
+
+all_tissues_peaks_summary<-per_tissue_per_peak_summary()
+all_tissues_peaks_summary<-bind_rows(all_tissues_peaks_summary) 
+
+```
+
+## Supplementary figure 1
+```{r supp1}
+
+supp1_b<-ggplot(hits_overlaps_filt, aes(x=factor(total), y=perc_overlap_peak, fill=factor(total), group=total))+geom_boxplot()+
+  xlab("PD")+ ylab("Pairwise overlaps\nrelative to peak width")+
+  theme_bw(base_size = 8)+
+  #guides(fill=guide_legend(title="Number of tissues"))+
+  basic_theme+
+  theme(legend.position = "none")+
+  scale_fill_manual(values = specificityColors)
+#could also just take the overlap of any 2 tissues as an example
+
+supp1_a<-ggplot(all_tissues_peaks_summary %>% mutate(tissue=gsub("_"," ",tissue)), aes(x=total, y=mean_length, color=tissue, group=tissue))+
+  geom_line() +
+  theme_bw(base_size = 8)+
+  basic_theme+
+  xlab("PD")+
+  theme( legend.title = element_blank())+
+  ylab("Peak width in bp")+
+  scale_color_manual(values=tissueColors)
+
+
+# add mixed model outputs: this is generated in 1.4_run_model_permutations_expression_pleiotropy.R
+pred<-readRDS("../expression/complex_mixed_model_boot.RDS")
+enh_expr_suppl<-pred$coef %>% separate(term, into=c("type","CGI","PD"), sep="_",convert = T) %>%
+  mutate( type = ifelse(type == "enh", "Enhancer","Promoter") ) %>% 
+  ggplot(aes(x=PD,y=estimate)) + 
+  geom_line(col="darkgrey")+
+  geom_ribbon(aes(ymin=perc_5, ymax=perc_95),col="darkgrey",fill="darkgrey",alpha=0.4)+
+  geom_point(aes(col=as.factor(PD)),size=2)+
+  scale_color_manual(values = specificityColors) +
+  scale_x_continuous(breaks=1:9)+
+  facet_grid(type~CGI,scales = "free")+
+  ylab(expression(beta~"weights"))+ guides(colour = "none")+
+  theme_bw( base_size = 8 ) +
+  basic_theme +
+             theme(legend.title = element_blank(),
+                   legend.position = "bottom",
+                   legend.box = "horizontal",
+                   legend.direction = "horizontal",
+                   legend.key.size = unit(3,"mm")) +
+  theme(legend.title = element_blank(),
+        legend.position = "None",
+        legend.background = element_rect(fill='transparent'))
+enh_expr_suppl
+
+
+suppl_top<-plot_grid(supp1_a,supp1_b, rel_widths = c(0.4,0.3), labels = c("A","B"), scale=0.97, label_x = c(0,-0.05), label_size = 12)
+suppl1<-plot_grid(suppl_top,enh_expr_suppl, labels = c("","C"), ncol=1, label_size = 12, rel_heights = c(0.5,0.9), scale=c(1,0.95))
+
+ggsave("../figures/suppl1.pdf", suppl1, height=150*0.85, width =162.5*0.75, units = "mm")
+
+
+```
+
+## Tissue per-bp coverage
+
+
+```{r cov, eval=F}
+
+# read in coverage ####
+
+cov<-read.table("../general/bed/peak_coverage.bed")
+colnames(cov)<-c("chr","start","end","region_id","total","position","coverage")
+  
+cov_summary<-cov %>% as_tibble() %>%
+  dplyr::mutate(max=ifelse(total==coverage,"yes","no")) %>%
+  dplyr::group_by(total,max) %>%
+  dplyr::summarise(max_cov=length(max)) %>%
+  dplyr::ungroup() %>%
+  dplyr::filter(total!=1) %>%
+  tidyr::pivot_wider(names_from=max, values_from=max_cov) %>%
+  dplyr::rowwise() %>%
+  dplyr::mutate(all=sum(yes,no),proportion=yes/all) 
+
+ggplot(cov_summary, aes(x=no, y=yes, color=as.factor(total))) + geom_point()
+ggplot(cov_summary, aes(x=as.factor(total), y=proportion)) + geom_point()
+
+```

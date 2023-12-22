@@ -1,0 +1,9 @@
+short_number	cell_line	cell_type	condition	P5	P7  species
+01	29B5	iPSC	fresh	Ad1_noMX	Ad2.17_TGCTGGGT human
+02	12C2	iPSC	fresh	Ad1_noMX	Ad2.18_GAGGGGTT human
+03	39B2	iPSC	fresh	Ad1_noMX	Ad2.19_AGGTTGGG cynomolgus
+04	56A1	iPSC	fresh	Ad1_noMX	Ad2.20_GTGTGGTG cynomolgus
+05	N17_29B5	NPC	fresh	Ad1_noMX	Ad2.21_TGGGTTTC human
+06	N14_12C2	NPC	fresh	Ad1_noMX	Ad2.22_TGGTCACA human
+07	N15_39B2	NPC	fresh	Ad1_noMX	Ad2.23_TTGACCCT cynomolgus
+08	N20_56A1	NPC	fresh	Ad1_noMX	Ad2.24_CCACTCCT cynomolgus

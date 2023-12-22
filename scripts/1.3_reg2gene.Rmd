@@ -1,0 +1,220 @@
+---
+title: "Regulatory complexity"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE)
+library(DBI)
+library(RMySQL)
+library(GenomicFeatures)
+library(ggplot2)
+library(GenomicRanges)
+library(tidyverse)
+library(cowplot)
+library(biomaRt)
+library(plyranges)
+
+source("helper_functions.R")
+
+tissueColors <- c("#9E0142" ,"#D53E4F", "#F46D43", "#FDAE61", "#FFD92F" ,"#ABDDA4", "#66C2A5", "#3288BD", "#5E4FA2")
+names(tissueColors) <-  c("adrenal_gland", "brain", "heart", "kidney", "large_intestine", "lung", "muscle", "stomach", "thymus")
+
+tissueColors2 <- c("#9E0142" ,"#D53E4F", "#F46D43", "#FDAE61", "#FFD92F" ,"#ABDDA4", "#66C2A5", "#3288BD", "#5E4FA2")
+names(tissueColors2) <-  c("adrenal gland", "brain", "heart", "kidney", "large intestine", "lung", "muscle", "stomach", "thymus")
+
+specificityColors <- c( "#A3753B", "#CC9B57", "#E7CF97", "#F8EDD0", "#F7F7F7", "#D2EEEA", "#99D7CE", "#5DACA5", "#33847E")
+names(specificityColors) <-  c(1:9)
+
+basic_theme<-  theme(axis.title=element_text(size=8.5),
+        axis.text = element_text(color="black", size=7),
+        #legend.title = element_text(size = 8), 
+        legend.text = element_text(size = 6.5),
+        legend.key.size = unit(0.8, "lines"),
+        legend.margin=ggplot2::margin(0.3,0.3,0.3,0.3),
+        legend.box.margin=ggplot2::margin(0.2,0.2,0.2,0.2))
+
+#specificity colors
+#+scale_fill_brewer(palette="BrBG",direction = 1)
+```
+
+## Jamm regions
+
+A few regions were larger than 4kb, we excluded these huge concatemers, since they cannot be unambiguously assigned to genes.
+```{r jamm}
+jammR <- readRDS("../general/region_summary/jamm_region_info_full.rds")
+
+jammGR <- GRanges( seqnames = jammR$chromosome,
+                   ranges = IRanges( start = jammR$start,
+                                     end = jammR$end,
+                                     name = jammR$region_id),
+                   strand ="*",
+                   region_id = jammR$region_id,
+                   CGI = jammR$CGI,
+                   jammR[,colnames(jammR) %in% names(tissueColors)])
+
+table(names(jammGR)==jammGR$region_id)
+
+```
+
+
+## Generate a TSS file 
+
+We are using GENCODE on hg19. We select the 5' of transcripts to get all TSSs.
+
+```{r make TSS list, eval=T}
+
+# download gtf from https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_19/gencode.v19.annotation.gtf.gz
+
+tss <- read_gff("../gtf/gencode.v19.annotation.gtf.gz") %>%
+  mutate(gene_id = sub("(.*)\\..*", "\\1", gene_id)) %>%
+  filter(type == "transcript") %>%
+  anchor_5p() %>% mutate(width = 1)
+
+tss$tss_id<-1:length(tss)
+tss$gene_name<-tss$gene_id
+jammGR$peak_id<-jammGR$region_id
+
+saveRDS(tss, file="../distance_to_tss/gencode19.tssGR.rds")
+```
+
+## TSS-enhancer association 
+Enhancers are only associated with TSS that have open promoters. This step does not need to be repeated as we save the outputs under distance_to_tss/DHS_to_gene.rds
+
+```{r promenh2}
+
+summarized_expression_all<-readRDS("../expression/summarized_expression_allTissues.rds")
+tss<-readRDS("../distance_to_tss/gencode19.tssGR.rds")
+
+tissue_GR<-list()
+tissues<-unique(summarized_expression_all$tissue)
+for (i in tissues){
+  tissue_GR[[i]]<-associate_per_tissue(tissue=i)
+}
+
+DHS_to_gene<-bind_ranges(tissue_GR, .id="tissue") %>%
+  as_tibble() %>%
+  dplyr::rename(region_id=peak_id,assignment=element_type) %>%
+  dplyr::select(region_id, gene_id, assignment, distance, tissue) %>%
+  left_join(jammR %>% dplyr::select(region_id, total, GC_content, CpG_obs_exp, CGI)) %>%
+  filter(!is.na(CpG_obs_exp)) %>%
+  dplyr::select(-GC_content, -CpG_obs_exp) %>%
+  mutate(gene_id = sub("(.*)\\..*", "\\1", gene_id))
+
+
+saveRDS(DHS_to_gene, "../distance_to_tss/DHS_to_gene.rds")
+#need to remember that this annotation won't contain region_ids that were not close enough in any tissue to any gene
+
+#sanity checks
+
+#DHS_to_gene %>% group_by(region_id,assignment) %>% dplyr::summarise(n=length(region_id)) %>% group_by(region_id) %>% summarise(n=length(region_id)) %>% filter(n>1) 
+#consistent enh/prom assignments across tissues
+
+#a few regions (20k) have variable number of gene_id assignments across tissues
+#DHS_to_gene %>% group_by(region_id,tissue) %>% summarise(n_genes = length(unique(gene_id))) %>% group_by(region_id) %>% filter(max(n_genes)!=min(n_genes))
+
+```
+
+# Basic overview of the association results
+
+## Supplementary figure 2
+Number of samples and genes per tissue (expression); distances to nearest TSSs; number of elements per gene..
+
+```{r suppl2}
+
+srx_expression_info<-readRDS("../expression/srx_expression_info.rds")
+
+expr<-plot_grid(
+  
+  ggplot(srx_expression_info %>% 
+           add_row(tissue="brain") %>% 
+           mutate(tissue=gsub("_"," ",tissue)), 
+         aes(x=tissue, fill=tissue))+
+    geom_bar()+
+    coord_flip()+
+    theme_bw(base_size = 7)+
+    theme(legend.position = "none", 
+          axis.title.y=element_blank(),
+          plot.margin = unit(c(3.5, 3.5, 3.5, 10), "pt"))+
+    scale_fill_manual(values=tissueColors2)+
+    ylab("# of replicates")+
+    basic_theme+
+    scale_x_discrete(limits=rev),
+  
+  summarized_expression_all %>%
+    group_by(tissue) %>%
+    summarise(n_genes=length(unique(gene_id))) %>%
+    mutate(tissue=gsub("_"," ",tissue)) %>%
+    ggplot(aes(x=tissue, y=n_genes, color=tissue))+
+    geom_point(size=2.5)+
+    coord_flip()+
+    theme_bw(base_size = 7)+
+    theme(legend.position = "none", 
+          axis.title.y=element_blank(),
+          axis.text.y=element_blank(), 
+          axis.ticks.y=element_blank(),
+          plot.margin = unit(c(3.5, 3.5, 3.5, 3.5), "pt"))+
+    scale_color_manual(values=tissueColors2)+
+    ylab("# of genes")+
+    scale_y_continuous(labels = scales::unit_format(unit = "k", scale = 1e-3))+
+    basic_theme+
+    scale_x_discrete(limits=rev),
+  rel_widths = c(0.23,0.13)
+)
+
+
+
+#assignment numbers and distances
+gene_ass_summary_tissues<-summarise_assignments(assignment_table = bind_ranges(tissue_GR,
+                                                                               .id="tissue") %>% 
+                                                  as_tibble() %>% 
+                                                  dplyr::rename(region_id=peak_id) %>%
+                                                  dplyr::mutate(element_type=ifelse(element_type=="enh","Enhancer","Promoter")),
+                                                regids = unique(jammGR$region_id),
+                                                tissuewise=T)
+
+
+
+# Number of promoters and enhancers / gene (check ones without regions)
+p_n_el<-DHS_to_gene %>%
+  group_by(gene_id,tissue) %>%
+  summarise(n_elements=length(unique(region_id))) %>%
+  mutate(tissue=gsub("_"," ",tissue)) %>%
+  ggplot(aes(x=tissue, y=n_elements, fill=tissue))+
+  geom_boxplot(outlier.size = 0.1, alpha=0.9, notch = T, width=0.6)+
+  theme_bw(base_size=7)+
+  scale_y_log10()+
+  theme(axis.title.x = element_blank())+
+  scale_fill_manual(values=tissueColors2)+
+  ylab("# of CREs per gene")
+
+gene_ass_summary_tissues$p1 + basic_theme 
+gene_ass_summary_tissues$p2 + basic_theme 
+
+top1<-plot_grid(expr, 
+                gene_ass_summary_tissues$p2_1 + basic_theme + 
+                  theme(plot.margin = unit(c(3.5, 5.5, 3.5, 3.5), "pt")), 
+                gene_ass_summary_tissues$p2_2 + basic_theme, 
+                rel_widths = c(0.47,0.295,0.27),
+                labels=c("A","B","C"), 
+                ncol = 3,
+                scale=0.993,
+                label_x = c(-0.02, 0, 0))
+
+bottom1<-plot_grid(#NULL,
+                   gene_ass_summary_tissues$p1 + basic_theme, 
+                   p_n_el + 
+                     basic_theme + 
+                     theme(legend.position = "none", 
+                           axis.text.x = element_text(angle=45, hjust = 1))+xlab(""), 
+                   align = "h", axis = "tb",
+                   rel_widths = c(0.35,0.68), 
+                   nrow=1, labels=c("D","E"))
+
+                   
+plot_grid(top1, bottom1, ncol=1, rel_heights = c(1,1.2))
+ggsave("../figures/suppl2_2.pdf",height=105, width =162.5, units="mm")
+
+```

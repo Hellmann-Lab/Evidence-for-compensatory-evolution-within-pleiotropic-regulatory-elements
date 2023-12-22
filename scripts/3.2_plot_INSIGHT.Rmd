@@ -1,0 +1,561 @@
+---
+title: "Sequence conservation associated with regulatory pleiotropy"
+author: "Zane Kliesmete"
+date: "03/11/2020"
+output: html_document
+#editor_options: 
+#  chunk_output_type: console
+editor_options: 
+  chunk_output_type: inline
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+libs<-c("RMySQL","tidyverse","cowplot","data.table","GenomicRanges","patchwork", "ggpubr")
+sapply(libs, require, character.only=T)
+
+source("helper_functions.R")
+
+tissueColors <- c( "#9E0142" ,"#D53E4F", "#F46D43", "#FDAE61", "#FFD92F" ,"#ABDDA4", "#66C2A5", "#3288BD", "#5E4FA2")
+names(tissueColors) <-  c("adrenal gland", "brain", "heart", "kidney", "large intestine", "lung", "muscle", "stomach", "thymus")
+
+
+specificityColors <- c( "#A3753B", "#CC9B57", "#E7CF97", "#F8EDD0", "#F7F7F7", "#D2EEEA", "#99D7CE", "#5DACA5", "#33847E")
+names(specificityColors) <-  c(1:9)
+
+
+regionColors <- c("#9CA578","#3288BD")
+names(regionColors) <-  c("Enhancer", "Promoter")
+
+
+DA_colors<-c("#AEAEC2","#606080")
+names(DA_colors)<-c("Not conserved", "Conserved")
+
+basic_theme<-  theme(axis.title=element_text(size=8.5),
+        axis.text = element_text(color="black", size=7),
+        #legend.title = element_text(size = 8), 
+        legend.text = element_text(size = 6.5),
+        legend.key.size = unit(0.8, "lines"),
+        legend.margin=margin(0.3,0.3,0.3,0.3),
+        legend.box.margin=margin(0.2,0.2,0.2,0.2))
+
+
+basic_theme_ins<-  theme(axis.title=element_text(size=9),
+                         axis.text = element_text(color="black", size=8),
+                         legend.title = element_text(size = 7.5), 
+                         legend.text = element_text(size = 7.4),
+                         legend.key.size = unit(0.6, "lines"),
+                         legend.margin=margin(0,0,0,0),
+                         legend.box.margin=margin(0,0,0,0),
+                         legend.background = element_blank(), 
+                         legend.box.background = element_blank(),
+                         panel.grid.major = element_line(size = 0.35),
+                         panel.grid.minor = element_blank())
+
+```
+
+## Getting and combining region information from the SQL database
+
+```{r sql}
+myDriver=dbDriver("MySQL")
+con=dbConnect(myDriver, host="chimp.anthro.bzm",username="zane",password="zanezane", dbname="peters_stuff")
+#dbListTables(con)
+
+jamm_region_identifiers<-readRDS("../general/region_summary/jamm_region_identifiers.rds")
+jamm_DNase_binary<-readRDS("../general/region_summary/jamm_DNase_binary.rds")
+jamm_region_info_full<-readRDS("../general/region_summary/jamm_region_info_full.rds")
+jamm_peaks<-readRDS("../general/region_summary/jamm_peaks.rds")
+
+# identify region_ids that overlap with CDS
+OL_CDS<-filter_by_overlaps(as_granges(jamm_region_info_full %>% 
+                                        dplyr::rename(seqnames=chromosome)),
+                           read_gff("../gtf/gencode.v19.annotation.gtf.gz") %>%
+                             filter(type=="CDS"))
+
+```
+
+### Per region
+```{r plotEnhIns}
+
+results<-get_insight("../INSIGHT/per_region/")
+
+#add number of regions
+results$no_of_regions<-0
+for (reg in c("enh","prom")){
+     for (i in c(1:9)){
+   regions<-read.table(paste0("../INSIGHT/per_region/",reg,"/sp",i,".bed"), header=F)
+    results$no_of_regions[results$dataID==paste0("sp",i,"_",reg)]<-dim(regions)[1]
+}}
+    
+insight_region_long<-results %>%
+  filter(!grepl(".downs", dataID)) %>%
+  tidyr::separate(dataID,c("sp","region"), sep="_", extra="merge") %>%
+  pivot_longer_insight()
+
+```
+
+### Per tissue
+```{r plotInsTissue}
+
+results<-get_insight("../INSIGHT/all_per_tissue/")
+
+insight_tissues_long<-results %>%
+  filter(!grepl(".downs", dataID)) %>%
+  tidyr::separate(dataID,c("sp","tissue"), sep="_", extra="merge") %>%
+  pivot_longer_insight()
+
+```
+
+### Brain and thymus peaks
+```{r plotPeaks}
+
+insight_peaks_long1<-get_insight("../INSIGHT/PeaksAntiPeaks/") %>%
+  tidyr::separate(dataID,c("sp","tissue", "peak"), sep="_") %>%
+  mutate(peak=ifelse(peak=="peaks","peak","adjacent")) %>%
+  pivot_longer_insight() 
+  
+insight_peaks_long<-bind_rows(insight_tissues_long %>% 
+              filter(sp=="sp1", tissue %in% c("brain","thymus")) %>% 
+              mutate(peak="peak"), insight_peaks_long1) %>%
+  filter( selection_type != 'E.A.') %>%
+  mutate(type=paste0(tissue,"_",peak),
+         longLab = case_when( selection_type == 'E.W.' ~ "Weak negative selection (E.W.):",
+                              selection_type == 'rho'  ~ "All~negative~selection~symbol('(')*rho*symbol(')')*symbol(':')"))
+
+```
+
+## Plot main figures
+
+# First main
+
+```{r first}
+
+
+basic_theme_ins2<-  theme(axis.title=element_text(size=9),
+                         axis.text = element_text(color="black", size=8),
+                         legend.title = element_text(size = 7.5), 
+                         legend.text = element_text(size = 7.4),
+                         legend.key.size = unit(0.6, "lines"),
+                         legend.margin=margin(0,0,0,0),
+                         legend.box.margin=margin(0,0,0,0),
+                         legend.background = element_blank(), 
+                         legend.box.background = element_blank(),
+                         panel.grid.major = element_line(size = 0.35),
+                         panel.grid.minor = element_blank(),
+                         strip.text = element_text(size = 8))
+
+DA_colors<-c("#AEAEC2","#606080")
+names(DA_colors)<-c("Not conserved", "Conserved")
+
+
+
+results<-get_insight("../INSIGHT/per_NPC_DA_stringent/")
+
+#add number of regions
+results$no_of_regions<-0
+for (reg in c("DA","nonDA")){
+     for (i in c(1:9)){
+   regions<-read.table(paste0("../INSIGHT/per_NPC_DA/",reg,"/sp",i,".bed"), header=F)
+    results$no_of_regions[results$dataID==paste0("sp",i,"_",reg)]<-dim(regions)[1]
+}}
+    
+insight_DA1_long<-results %>%
+  tidyr::separate(dataID,c("sp","DA"), sep="_", extra="merge") %>%
+  pivot_longer_insight() %>%
+  filter( selection_type != 'E.A.') %>%
+  mutate(longLab = case_when( selection_type == 'E.W.' ~ "Cross-species accessibility",
+                              selection_type == 'rho'  ~ "Cross-species accessibility"),
+         DA= ifelse(DA=="DA","Not conserved", "Conserved"))
+
+
+pReg1_DA<-ggplot(insight_DA1_long %>% filter(selection_type=="E.W."),
+              aes(x=as.numeric(Tissues), y=selection_coeff, group=DA, color=DA))+
+  geom_smooth(aes(group=DA, color=DA), linewidth=0.5, alpha=0.07, method="lm")+
+  geom_errorbar(aes(ymax=selection_coeff+stderr, ymin=selection_coeff-stderr, color=DA), 
+                stat = "identity",position=position_dodge(width=.1),width=0.1, size=0.4)+ 
+  geom_point(aes(color=DA),
+             stat = "identity",position=position_dodge(width=.1))+
+  scale_color_manual(values=DA_colors)+  
+  theme_bw()+
+  basic_theme_ins2+
+  xlab("")+
+  labs(color="")+
+  scale_x_continuous(breaks=c(1:9))+
+  labs(color="")+
+  ylim(c(0.15,1.25))+
+  ylab('Sites per kb')+
+  theme(legend.title=element_blank(),
+        legend.position=c(0.3,0.9),
+        plot.margin = unit(c(0.15,0.15,0,0.15),"cm"),
+        legend.box = "horizontal",
+        axis.title = element_blank(),
+        axis.text = element_blank(),
+        axis.ticks = element_blank())
+
+
+pReg2_DA<-ggplot(insight_DA1_long %>% filter(selection_type=="rho"),
+              aes(x=as.numeric(Tissues), y=selection_coeff, group=DA, color=DA))+
+  geom_smooth(aes(group=DA, color=DA), size=0.5, alpha=0.07)+
+  geom_errorbar(aes(ymax=selection_coeff+stderr, ymin=selection_coeff-stderr, color=DA), 
+                stat = "identity",position=position_dodge(width=.1),width=0.1, size=0.4)+ 
+  geom_point(aes(color=DA),
+             stat = "identity",position=position_dodge(width=.1))+
+  scale_color_manual(values=DA_colors)+  
+  scale_size_continuous(range = c(1,2), breaks = c(2.5,7.5,12.5))+
+  theme_bw()+
+  basic_theme_ins2+
+  xlab("PD")+
+  scale_x_continuous(breaks=c(1:9))+
+  ylim(c(0.0,0.35))+
+  ylab('Fraction of sites')+
+  theme(legend.position="none",
+        legend.box = "horizontal",
+        plot.margin = unit(c(0,0.15,0.15,0.15),"cm"),
+        legend.title = element_blank(),
+        axis.title.y = element_blank(),
+        axis.text.y = element_blank(),
+        axis.ticks.y = element_blank())
+
+pReg1_DA/pReg2_DA
+
+
+
+
+pReg1<-ggplot(combined %>% filter(selection_type=="E.W.", !is.na(region)),
+              aes(x=as.numeric(Tissues), y=selection_coeff, group=region, color=region))+
+  geom_smooth(aes(group=region, color=region), linewidth=0.5, alpha=0.07, method="lm")+
+  geom_errorbar(aes(ymax=selection_coeff+stderr, ymin=selection_coeff-stderr, color=region), 
+                stat = "identity",position=position_dodge(width=.1),width=0.1, size=0.4)+ 
+  geom_point(aes(color=region),
+             stat = "identity",position=position_dodge(width=.1))+
+  scale_color_manual(values=c("#9CA578","#3288BD"))+  
+  theme_bw()+
+  basic_theme_ins2+
+  xlab("")+
+  labs(color="")+
+  scale_x_continuous(breaks=c(1:9))+
+  labs(color="")+
+  ylim(c(0.15,1.25))+
+  ylab('E.W. (sites per kb)')+
+  theme(legend.title=element_blank(),
+        legend.position = c(0.23, 0.9),
+        plot.margin = unit(c(0.15,0.05,0,0),"cm"),
+        legend.box = "horizontal",
+        axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        axis.ticks.x = element_blank())
+
+
+
+pReg2<-ggplot(combined %>% filter(selection_type=="rho", !is.na(region)),
+              aes(x=as.numeric(Tissues), y=selection_coeff, group=region, color=region))+
+  geom_smooth(aes(group=region, color=region), size=0.5, alpha=0.07)+
+  geom_errorbar(aes(ymax=selection_coeff+stderr, ymin=selection_coeff-stderr, color=region), 
+                stat = "identity",position=position_dodge(width=.1),width=0.1, size=0.4)+ 
+  geom_point(aes(color=region), #size=no_of_regions),
+             stat = "identity",position=position_dodge(width=.1))+
+  scale_color_manual(values=c("#9CA578","#3288BD"))+  
+  theme_bw()+
+  basic_theme_ins2+
+  xlab("PD")+
+  scale_x_continuous(breaks=c(1:9))+
+  ylim(c(0.0,0.35))+
+  ylab(expression(paste(rho~' (fraction of sites)')))+
+  theme(legend.position="none",
+        plot.margin = unit(c(0,0.05,0.15,0),"cm")) 
+
+
+
+p_seq1<-(pReg1|pReg1_DA)/(pReg2|pReg2_DA)+plot_annotation(tag_levels = 'A') & theme(plot.tag=element_text(size=12,face = "bold"))
+ggsave("/data/share/htp/pleiotropy/paper_data/figures/fig3_part1.pdf",p_seq1, height=183*0.6, width=162.5*0.7, units="mm")
+
+```
+
+## Second main 
+```{r secondmain}
+
+# Second separate figure
+
+pTis1<-ggplot(combined %>% filter(selection_type=="E.W.", !is.na(tissue))) + 
+  geom_line( data = filter(combined, ! (tissue %in% c("brain")) & selection_type == 'E.W.' & !is.na(tissue)) , 
+             aes( x = as.numeric(Tissues), y=selection_coeff , group=tissue , color=tissue), size=0.4, alpha=0.9) +
+  geom_line( data = filter(combined, (tissue %in% c("brain")) & selection_type == 'E.W.' & !is.na(tissue)) , 
+             aes( x = as.numeric(Tissues), y=selection_coeff , group=tissue , color=tissue), size=0.8, alpha=0.9) +
+  scale_color_manual(values=tissueColors)+  
+  theme_bw()+
+  basic_theme_ins2+
+  scale_x_continuous(breaks=c(1:9))+
+  ylim(c(0.15,1.25))+
+  ylab('Sites per kb')+
+  theme(plot.margin = unit(c(0.15,0.02,0,0),"cm"),
+        legend.position="none")+
+  ylab('E.W. (sites per kb)')+
+  xlab("PD")
+
+
+pTis2<-ggplot(combined %>% filter(selection_type=="rho", !is.na(tissue))) + 
+  geom_line( data = filter(combined, ! (tissue %in% c("brain")) & selection_type == 'rho' & !is.na(tissue)) , 
+             aes( x = as.numeric(Tissues), y=selection_coeff , group=tissue , color=tissue), size=0.4, alpha=0.9) +
+  geom_line( data = filter(combined, (tissue %in% c("brain")) & selection_type == 'rho' & !is.na(tissue)) , 
+             aes( x = as.numeric(Tissues), y=selection_coeff , group=tissue , color=tissue), size=0.8, alpha=0.9) +
+  scale_color_manual(values=tissueColors)+  
+  theme_bw()+
+  basic_theme_ins2+
+  xlab("PD")+
+  scale_x_continuous(breaks=c(1:9))+
+  ylim(c(0.0,0.35))+
+  ylab('Fraction of sites')+
+  theme(plot.margin = unit(c(0,0.02,0.15,0),"cm"),
+        legend.title = element_blank())+
+  ylab(expression(paste(rho~" (fraction of sites)")))
+
+
+
+
+# add the peak - antipeak stuff
+df<- tibble( s1= 500+rnorm(1000, 300, 100) ,
+             s2= 700+rnorm(1000, 500, 300),
+             s3= 200+rnorm(1000, 200, 200)) %>%
+  tidyr::gather(key,val,s1,s2,s3) 
+
+
+peak<-ggplot(df,aes(x=val,fill=key))+
+  geom_density(alpha=0.5,lwd=0.4) + 
+  ylim(c(-0.0015,0.0045))+
+  scale_fill_manual(values=c("red","grey","grey"))+
+  annotate("segment", x = 1100, xend = 1800, y = -0.0007, yend = -0.0007, colour = "grey", size=0.75, alpha=0.6, arrow=arrow(ends="both",length = unit(0.13, "cm")))+
+  annotate("segment", x = 0, xend = 500, y = -0.0007, yend = -0.0007, colour = "grey", size=0.75,  arrow=arrow(ends="both",length = unit(0.13, "cm")))+
+  annotate("segment", x = 500, xend = 1100, y = -0.0007, yend = -0.0007, colour = "red", size=0.75,  arrow=arrow(ends="both",length = unit(0.13, "cm")))+
+  annotate("segment", x = 0, xend = 1800, y = -0.0015, yend = -0.0015, colour = "darkgrey", size=0.75,  arrow=arrow(ends="both",length = unit(0.13, "cm")))+
+  annotate("text", x = 250, y = -0.00025, label = "adjacent", size=2.4) +
+  annotate("text", x = 1400, y = -0.00025, label = "adjacent", size=2.4) +
+  annotate("text", x = 800, y = -0.00025, label = "peak",col="red", size=2.4)+ theme_void()+
+  annotate("text", x = 800, y = -0.0011, label = "CRE", size=3)+ theme_void()+
+  theme(legend.position = "None",
+        text=element_text(family="Helvetica"),
+        plot.margin = unit(c(0,.05,0,0),"cm"),
+        panel.border = element_rect(colour = "black", fill=NA))
+
+
+antiRho<-ggplot(insight_peaks_long %>% filter(selection_type=="rho", tissue=="brain"),
+                aes(x=as.numeric(Tissues), 
+                    y=selection_coeff, 
+                    group=type, 
+                    alpha=peak, shape=peak,
+                    ymin=selection_coeff - stderr,
+                    ymax=selection_coeff + stderr))+
+  geom_line(show_guide=FALSE, color=tissueColors[["brain"]])+
+  geom_errorbar(width=0.15, size=0.1, show.legend=FALSE, color=tissueColors[["brain"]])+
+  geom_point(size=2, color=tissueColors[["brain"]])+
+  theme_bw()+
+  basic_theme_ins2+
+  xlab("PD")+
+  scale_y_continuous()+
+  scale_alpha_manual(values= c(0.35,1))+
+  scale_x_continuous(breaks=c(1:9))+
+  theme(legend.title = element_blank(),
+        plot.margin=unit(c(0.2,0,0.05,0.02),"cm"),
+        legend.position = c(0.25, 0.25))+
+  ylab(expression(paste(rho~" (fraction of sites)")))
+
+
+
+p_seq2<-(pTis1|pTis2)/(peak|antiRho)+plot_annotation(tag_levels = 'A') & theme(plot.tag=element_text(size=12,face = "bold"))
+ggsave("/data/share/htp/pleiotropy/paper_data/figures/fig3_part2.pdf",p_seq2, height=183*0.6, width=162.5*0.85, units="mm")
+
+
+```
+
+# Supplementary figure 
+## CGI vs no CGI
+
+```{r plotCGI}
+
+results<-get_insight("../INSIGHT/CGI/")
+target_dir="../INSIGHT/CGI/"    
+
+results$no_of_regions<-0
+for (CGI in c("CGI", "noCGI")){
+    for (i in c(1:9)){
+  regions<-read.table(paste0(target_dir,CGI,"/sp",i,".bed"), header=F)
+  results$no_of_regions[results$dataID==paste0("sp",i,"_",CGI)]<-dim(regions)[1]
+}}
+    
+
+sp_all_insight<-results %>%
+  filter(!grepl(".downs", dataID)) %>%
+  tidyr::separate(dataID,c("sp","CGI"), sep="_")
+
+insight_CGI_long<-pivot_longer_insight(sp_all_insight) %>%
+  filter( selection_type != 'E.A.') %>%
+    mutate(longLab = case_when(selection_type == 'E.W.' ~ "Weak negative selection",
+                                selection_type == 'rho'  ~ "All negative selection"))
+
+pReg1_CGI<-ggplot(insight_CGI_long %>% filter(selection_type=="E.W."),
+                             aes(x=as.numeric(Tissues), y=selection_coeff, group=CGI, color=CGI))+
+  geom_smooth(aes(group=CGI, color=CGI), size=0.5, alpha=0.07)+
+  geom_errorbar(aes(ymax=selection_coeff+stderr, ymin=selection_coeff-stderr, color=CGI), 
+                stat = "identity",position=position_dodge(width=.1),width=0.1, size=0.4) +
+  geom_point(aes(color=CGI),stat = "identity",position=position_dodge(width=.1))+
+  scale_color_manual(values=c("#D1462F", "#D9AE61")) + 
+  #facet_grid(.~longLab)+
+  theme_bw()+
+  basic_theme_ins+
+  scale_x_continuous(breaks=c(1:9))+labs(color="")+
+  ylab('E.W. (sites per kb)')+
+  xlab("PD")+
+  theme(legend.position = "none",
+        plot.margin = unit(c(0.2, 0.2, 0.2 ,0.2),"cm"))
+
+
+pReg2_CGI<-ggplot(insight_CGI_long %>% filter(selection_type=="rho"),
+                               aes(x=as.numeric(Tissues), y=selection_coeff, group=CGI, color=CGI))+
+     geom_smooth(aes(group=CGI, color=CGI), size=0.5, alpha=0.07)+
+     geom_errorbar(aes(ymax=selection_coeff+stderr, ymin=selection_coeff-stderr, color=CGI), 
+                                     stat = "identity",position=position_dodge(width=.1), width=0.1, size=0.4) +
+     geom_point(aes(color=CGI),stat = "identity",position=position_dodge(width=.1))+
+     scale_color_manual(values=c("#D1462F", "#D9AE61"))+
+     #facet_grid(.~longLab)+
+     theme_bw()+
+     basic_theme_ins+
+     xlab("")+
+     xlab("PD")+
+     scale_x_continuous(breaks=c(1:9))+
+     ylab(expression(paste(rho~' (fraction of sites)')))+
+     theme(legend.position=c(0.2, 0.2),
+           legend.spacing.y = unit(0.05, "cm"),
+           legend.spacing.x = unit(0.05, "cm"),
+           legend.title = element_blank(),
+           legend.box = "horizontal",
+           plot.margin = unit(c(0.2, 0.2, 0.2, 0.2),"cm")) 
+
+```
+
+## Phastcons and phyloP
+```{r phastc}
+
+jamm_bed<-jamm_region_info_full %>%
+  dplyr::rename(seqnames=chromosome) %>%
+  #filter(!region_id %in% OL_CDS$region_id) %>%
+  dplyr::select(seqnames, start, end, region_id, total, CGI) %>%
+  as_granges()
+
+DHS_annot<-readRDS("../distance_to_tss/DHS_to_gene.rds") %>%
+  distinct(region_id, .keep_all = T)
+
+
+# Phastcons
+phastCons_DHS<-analysePhastCons(bigWigFile = "../bw/primates.phastCons46way.bw", gr=jamm_bed)
+saveRDS(phastCons_DHS, "../RDS/phastCons_DHS.rds")
+phastCons_DHS<-readRDS("../RDS/phastCons_DHS.rds")
+
+
+p_phastCons_point<-phastCons_DHS %>%
+  inner_join(DHS_annot %>% dplyr::select(region_id, assignment)) %>%
+  mutate(assignment = ifelse(assignment=="enh","Enhancer","Promoter")) %>%
+  group_by(total, assignment) %>%
+  summarise(mean=mean(meanPhastCons),
+            SE=sd(meanPhastCons)/sqrt(length(total)),
+            n=length(total)) %>%
+  ggplot(aes(x=as.factor(total), y=mean, color = assignment, group=assignment)) +
+  geom_smooth(size=0.5, alpha=0.05) + #, color="grey")+
+  geom_errorbar(aes(ymin=mean-SE, ymax=mean+SE),stat = "identity",width=0.2, size=0.4) +
+  geom_point() +
+  xlab("PD") +
+  ylab("Average PhastCons") +
+  theme_bw() +
+  basic_theme_ins +
+  scale_color_manual(values=regionColors) +
+  theme(legend.position = "none", 
+        legend.title = element_blank()) +
+  scale_size_continuous(range =c(2.5,4.5))
+
+
+
+
+# phyloP
+phyloP_DHS  <- analysePhyloP(bigWigFile = "../bw/primates.phyloP46way.bw", gr=jamm_bed)
+saveRDS(phyloP_DHS, "../RDS/phyloP_DHS.rds")
+phyloP_DHS<-readRDS("../RDS/phyloP_DHS.rds")
+
+p_phyloP_point<-phyloP_DHS %>%
+  inner_join(DHS_annot %>% dplyr::select(region_id, assignment)) %>%
+  mutate(combi=paste0(assignment,"_",total),
+         assignment = ifelse(assignment=="enh","Enhancer","Promoter")) %>%
+  group_by(total, assignment, combi) %>%
+  summarise(mean=mean(meanPhyloP),
+            SE=sd(meanPhyloP)/sqrt(length(total)),
+            n=length(total)) %>%
+  ggplot(aes(x=as.factor(total), y=mean, color = assignment, group=assignment)) +
+  #geom_line()+
+  geom_smooth(size=0.5, alpha=0.05) + #, color="grey")+
+  geom_errorbar(aes(ymin=mean-SE, ymax=mean+SE),stat = "identity",width=0.2, size=0.4) +
+  geom_point() +
+  xlab("PD") +
+  ylab("Average phyloP") +
+  theme_bw() +
+  basic_theme_ins +
+  scale_color_manual(values=regionColors) +
+  theme(legend.position = c(0.25,0.2), 
+        legend.title = element_blank())
+
+
+```
+## CpG and GC content conservation 
+
+```{r cpgcons}
+
+DHS_annot<-readRDS("../distance_to_tss/DHS_to_gene.rds") %>%
+  distinct(region_id, .keep_all = T)
+
+# keep only similar length and N-free sequences
+jamm_inATAC<-readRDS("../DA_ipsc_npc/RDS/jamm_inATAC.rds") %>%
+  filter(similar_width=="yes", Ns_hg38==0, Ns_macFas6==0) %>%
+  dplyr::mutate(GC_cons = 1-abs(GC_content.mac - GC_content.hg),
+                CpG_obs_exp_cons = 1-abs(CpG_obs_exp.mac - CpG_obs_exp.hg)) %>%
+  inner_join(DHS_annot %>% dplyr::mutate(region_id = as.factor(as.character(region_id))))
+
+
+
+p_cpg <- ggline(jamm_inATAC %>% mutate(label="CpG:"),
+                 x = "total", y = "CpG_obs_exp_cons", 
+                 color = "assignment", palette = c("#9CA578","#3288BD"),
+                 add = "mean_se", point_size = 0.00001, 
+                 plot_type = "l", size = 0.7) +
+  theme_bw() +
+  basic_theme_ins2 +
+  xlab("PD") +
+  #facet_grid(.~label)+
+  theme(legend.title = element_blank(), legend.position = "none") + #c(0.2, 0.8))+
+  ylab("CpG exp/obs conservation") +
+  geom_smooth(color = "transparent", alpha = 0.1, size = 0.5)+
+    scale_y_continuous(breaks=scales::pretty_breaks(n=4))
+
+
+p_gc <- ggline(jamm_inATAC %>% mutate(label = "GC:"),
+                x = "total", y = "GC_cons", 
+                color = "assignment", palette = c("#9CA578","#3288BD"),
+                add = "mean_se", point_size = 0.00001, 
+                plot_type = "l", size = 0.7) +
+  theme_bw() +
+  basic_theme_ins2 +
+  xlab("PD") +
+  #facet_grid(.~label)+
+  theme(legend.title = element_blank(), legend.position = "none") +
+  ylab("GC conservation") +
+  geom_smooth(color = "transparent", alpha = 0.1, size = 0.5)+
+    scale_y_continuous(breaks=scales::pretty_breaks(n=4))
+
+p_cpg|p_gc
+
+```
+
+
+## Put the figure together
+```{r suppl3}
+
+psuppl<-(p_phastCons_point|p_phyloP_point)/(pReg1_CGI|pReg2_CGI)/(p_cpg|p_gc)+plot_annotation(tag_levels = 'A') & theme(plot.tag=element_text(size=12,face = "bold"))
+ggsave("/data/share/htp/pleiotropy/paper_data/figures/fig3_suppl.pdf",psuppl, height=183*0.9, width=162.5*0.78, units="mm")
+
+```
+

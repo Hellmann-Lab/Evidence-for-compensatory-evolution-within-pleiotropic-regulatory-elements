@@ -1,0 +1,148 @@
+---
+title: "Expression models"
+author: "Zane Kliesmete"
+date: "24/01/2021"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE)
+library(DBI)
+library(RMySQL)
+library(GenomicFeatures)
+library(ggplot2)
+library(GenomicRanges)
+library(tidyverse)
+library(cowplot)
+
+tissueColors <- c( "#9E0142" ,"#D53E4F", "#F46D43", "#FDAE61", "#FFD92F" ,"#ABDDA4", "#66C2A5", "#3288BD", "#5E4FA2")
+names(tissueColors) <-  c("adrenal_gland", "brain", "heart", "kidney", "large_intestine", "lung", "muscle", "stomach", "thymus")
+```
+
+
+## Generate an expression vs DHS table per tissue for the new types of gene-DHS association
+
+The inputs need to be downloaded from epigenome roadmap project, but the outputs are available for further use.
+
+```{r summarize}
+#reminder: important script - /home/zane/INSIGHT/region_summary/base_composition_script.R
+tissues<-c("adrenal_gland", "kidney", "muscle", "large_intestine", "heart", "lung", "stomach", "thymus")
+
+myDriver <- dbDriver("MySQL")
+con <- dbConnect(myDriver, host="chimp.anthro.bzm", username="epigenomics", password="epigenomics", dbname="epigenomics")
+dbListTables(con)
+all_gene_expression<-dbGetQuery(con, "SELECT * FROM all_gene_expression;")
+srx_info<-dbGetQuery(con, "SELECT * FROM srx_info;")
+
+srx_expression_info<-data.frame(srx_id=colnames(all_gene_expression)) %>%
+  inner_join(srx_info, by="srx_id") %>%
+  dplyr::distinct(srx_id,donor_id,total_reads, .keep_all=T) %>% 
+  #reduce expression table to the tissues of interest
+  mutate(tissue=gsub("adrenal gland", "adrenal_gland",tissue),
+         tissue=gsub("large intestine", "large_intestine",tissue)) %>%
+  filter(tissue %in% tissues)
+saveRDS(srx_expression_info, "../expression/srx_expression_info.rds")
+
+#198 genes appear more than once -- sum up the expression
+#all_gene_expression %>% group_by(geneid) %>% summarise(n=length(geneid)) %>% arrange %>% View
+all_gene_expression2<-all_gene_expression %>%
+  dplyr::select(-gname) %>%
+  gather(sample, expression, -geneid) %>%
+  group_by(geneid, sample) %>%
+  summarise(expression=sum(expression)) %>%
+  spread(sample, expression) %>%
+  tibble::column_to_rownames("geneid")
+
+count_table <- all_gene_expression2[,match(srx_expression_info$srx_id,colnames(all_gene_expression2))]
+table(colnames(count_table) == srx_expression_info$srx_id)
+
+# kick out systematic zeros
+count_table <- count_table[rowSums(count_table)>0,]
+saveRDS(count_table, "../expression/expression_count_table.rds")
+
+```
+
+## Summarize the expression of each gene per tissue
+
+```{r expression_per_tissue}
+
+expression_list<-list()
+summarized_expression_list<-list()
+
+# selected as expressed only genes that have at least 1 RPKM in at least 50% of the samples per tissue
+
+for (i in tissues){
+  srx_tissue_info<-srx_expression_info[srx_expression_info$tissue==i,]
+  count_table_tissue<-count_table[,match(srx_tissue_info$srx_id, colnames(count_table))]
+  freq_counts <- apply(count_table_tissue > 1, 1, mean, na.rm = T)
+  freq_expressed <- 0.5
+  expressed_genes <- freq_counts > freq_expressed
+  count_table_tissue<-count_table_tissue[expressed_genes,]
+  expression_list[[paste0(i)]]<-count_table_tissue
+  summarized_expression_list[[paste0(i)]]<-count_table_tissue %>%
+    dplyr::summarize(ensembl_gene_id=rownames(count_table_tissue),
+                     median_expression=apply(count_table_tissue, 1, median),
+                     log2_median_expression=log2(median_expression),
+                     mean_expression=apply(count_table_tissue, 1, mean),
+                     log2_mean_expression=log2(mean_expression), 
+                     CV_expression=apply(count_table_tissue, 1, sd)/mean_expression)
+}
+
+summarized_expression_df<-plyr::ldply(summarized_expression_list, .id="tissue")
+
+
+
+#also add the brain sample that was uploaded later onto ENCODE repositories
+brain<- read.table("../expression/human_fetalbrain.allgenes.rpkm.csv", head=T, sep="\t") %>%
+      dplyr::filter( E082 > 1 ) %>%
+      dplyr::transmute( tissue = "brain",
+                 gene_id = gene_id,
+                 median_expression = E082,
+                 log2_median_expression = log2( E082 ),
+                 CV_expression = NA,
+                 mean_expression =  E082,
+                 log2_mean_expression = log2( E082 ) )
+
+
+summarized_expression_all <- summarized_expression_df %>%
+  dplyr::select( tissue, ensembl_gene_id,median_expression, log2_median_expression, mean_expression, log2_mean_expression, CV_expression) %>%
+               dplyr::rename( gene_id = ensembl_gene_id) %>%
+               dplyr::bind_rows(brain %>% dplyr::select( tissue, gene_id, log2_median_expression, mean_expression, log2_mean_expression, CV_expression))
+
+saveRDS(summarized_expression_all, "../expression/summarized_expression_allTissues.rds")
+
+
+```
+
+
+
+```{r general stats}
+
+
+plot_grid(
+  
+  ggplot(srx_expression_info %>% add_row(tissue="brain"), 
+         aes(x=tissue, fill=tissue))+
+    geom_bar()+coord_flip()+
+    theme_bw()+
+    theme(legend.position = "none", axis.title.y=element_blank())+
+    scale_fill_manual(values=tissueColors)+
+    ylab("Number of samples"),
+          
+summarized_expression_all %>%
+  group_by(tissue) %>%
+  summarise(n_genes=length(unique(gene_id))) %>%
+  ggplot(aes(x=tissue, y=n_genes, fill=tissue))+geom_col()+coord_flip()+
+  theme_bw()+
+  theme(legend.position = "none",axis.title.y=element_blank(),
+        axis.text.y=element_blank(), axis.ticks.y=element_blank())+
+  scale_fill_manual(values=tissueColors)+
+  ylab("Number of expressed genes after filtering"),
+rel_widths = c(0.3,0.25)
+)
+
+```
+
+

@@ -1,0 +1,385 @@
+---
+title: "Sequence conservation associated with regulatory pleiotropy"
+author: "Zane Kliesmete"
+date: "03/11/2020"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+libs<-c("RMySQL","tidyverse","cowplot","data.table","GenomicRanges")
+sapply(libs, require, character.only=T)
+
+source("helper_functions.R")
+
+```
+
+## Getting and combining region information from the SQL database
+
+```{r sql}
+
+jamm_region_identifiers<-readRDS("../general/region_summary/jamm_region_identifiers.rds")
+jamm_DNase_binary<-readRDS("../general/region_summary/jamm_DNase_binary.rds")
+jamm_region_info_full<-readRDS("../general/region_summary/jamm_region_info_full.rds")
+jamm_peaks<-readRDS("../general/region_summary/jamm_peaks.rds")
+
+
+#gencode: download gtf from https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_19/gencode.v19.annotation.gtf.gz
+hg19annot<-read_gff("../gtf/gencode.v19.annotation.gtf.gz")
+# identify region_ids that overlap with CDS
+OL_CDS<-filter_by_overlaps(as_granges(jamm_region_info_full %>% 
+                                        dplyr::rename(seqnames=chromosome)),
+                           hg19annot %>% filter(type=="CDS"))
+
+```
+
+# INSIGHT
+
+## Separate coordinates into bed files according to the pleiotropic degree (1-9)
+
+Needed to downsample sp1 and sp2 groups because INSIGHT wouldn't take such a huge file.
+But I also ran INSIGHT on split parts and now combined the emInput parts per sp to have all the regions there.
+
+```{r bed}
+
+for (i in 1:9){
+  jamm_region_info_full %>%
+    filter(total==i) %>%
+    dplyr::select(chromosome,start,end) %>%
+  write.table(paste0("../general/bed/full_sp_bed/sp",i,".bed"),sep="\t",row.names = F,col.names = F,quote=F)
+}
+
+# must be smaller than 20M bases due to INSIGHT inability to use such a large file -downsample; but run the excluded regions separately too
+
+for (i in 1:2){
+bed<-read.table(paste0("../general/bed/full_sp_bed/sp",i,".bed"),head=F)
+tmp<-data.frame(chr=bed[,1],sta=bed[,2],end=bed[,3])
+
+ll=dim(tmp)[1]
+outfile<-paste0("../general/bed/full_sp_bed/sp",i,".downs.bed")
+if( sum(tmp$end-tmp$sta)/2e7>1){
+  print(sum(tmp$end-tmp$sta)/2e7)
+  n<-ll/( sum(tmp$end-tmp$sta)/2e7 )
+  print(n)
+  n<-floor(n/1000)*1000
+  print(n)
+  #downsample
+  write.table(tmp[sample.int(n=dim(tmp)[1], size=n), ],sep="\t",row.names = F,col.names = F,quote=F,file=outfile)
+  #split into equal number of rows
+  parts<-ceiling(sum(tmp$end-tmp$sta)/2e7)
+  rows<-floor(ll/parts)
+  vec<-ceiling(seq(from=0, to=ll, length.out = parts+1))
+  for (p in 1:parts){
+    write.table(tmp[(vec[p]+1):(vec[p+1]),],sep="\t",row.names = F,col.names = F,quote=F,file=paste0("../general/bed/full_sp_bed/split/sp",i,"_part",p,".bed"))
+  }
+} else { 
+  write.table(tmp,sep="\t",row.names = F,col.names = F,quote=F,file=outfile)
+}}
+```
+
+Region-wise:\\
+1) run all regions on INSIGHT website
+2) combine the downsampled PD1-2 .ins and .ins.flankPoly.forBetas.ins files from INSIGHT (full_original/emInput).
+
+Enhancer / promoter division: select only regions without CDS overlap.
+Per-tissue division: select only regions without CDS overlap.
+Tissue-exclusive/nonexclusive: I used and combined the .ins files from per-tissue division.\\
+
+Peak-wise:\\
+1) run all peaks/anti peaks for brain and thymusp on INSIGHT website, besides PD1 because it is the same as region in that case
+2) subset only peaks without CDS overlap.
+
+## Run INSIGHT per enhancer / promoter but without further separation
+
+```{r ins2}
+
+jamm_region_info_full<-readRDS("../general/region_summary/jamm_region_info_full.rds")
+
+DHS_annot<-readRDS("../distance_to_tss/DHS_to_gene.rds") %>%
+  distinct(region_id, .keep_all = T) %>%
+  dplyr::select(-gene_id) %>%
+  inner_join(jamm_region_identifiers) %>%
+  mutate(chromosome=paste0("chr",chromosome)) %>%
+  # remove region_ids that overlap with CDS
+  filter(!region_id %in% OL_CDS$region_id)
+  
+target_dir="../INSIGHT/per_region/"    
+
+for (i in c(1:9)){
+
+  bed_file<-read.table(paste0("../general/bed/full_sp_bed/sp",i,".bed"))
+  colnames(bed_file)<-c("chromosome","start","end")
+  
+  for (t in c("enh","prom")){
+  dir.create(paste0(target_dir,t), recursive=T, showWarnings = F)
+  sp<-inner_join(bed_file, DHS_annot %>% 
+                   filter(assignment==t) %>% 
+    dplyr::select(chromosome,start,end))
+  write.table(sp,paste0(target_dir,t,"/sp",i,".bed"), quote=FALSE, row.names = FALSE,col.names = FALSE, sep="\t")
+}}
+
+#subset and recalculate INSIGHT
+system("sbatch /data/share/htp/pleiotropy/paper_data/INSIGHT/scripts/combine_emInputs.sh")
+system("sbatch /data/share/htp/pleiotropy/paper_data/INSIGHT/scripts/commands_for_per_region.sh")
+
+```
+
+## Run INSIGHT per tissue
+
+```{r ins2}
+tissues<-c("adrenal_gland", "brain", "heart", "kidney", "large_intestine", "lung", "muscle", "stomach", "thymus")
+
+jamm_region_info_full<-readRDS("../general/region_summary/jamm_region_info_full.rds")
+DHS_annot<-readRDS("../distance_to_tss/DHS_to_gene.rds") %>%  
+  dplyr::select(-gene_id) %>%
+  inner_join(jamm_region_identifiers) %>%
+  mutate(chromosome=paste0("chr",chromosome)) %>%
+  filter(!region_id %in% OL_CDS$region_id)
+  
+target_dir="../INSIGHT/all_per_tissue/"    
+for (i in c(1:9)){
+  
+  bed_file<-read.table(paste0("../general/bed/full_sp_bed/sp",i,".bed"))
+  colnames(bed_file)<-c("chromosome","start","end")
+  
+  for (t in tissues){
+  dir.create(paste0(target_dir,t), recursive=T, showWarnings = F)
+  sp<-inner_join(bed_file, DHS_annot %>% 
+                   filter(tissue==t) %>% 
+    dplyr::select(chromosome,start,end))
+  write.table(sp,paste0(target_dir,t,"/sp",i,".bed"), quote=FALSE, row.names = FALSE,col.names = FALSE, sep="\t")
+}}
+
+#subset and recalculate INSIGHT
+system("sbatch /data/share/htp/pleiotropy/paper_data/INSIGHT/scripts/commands_for_all_per_tissue.sh")
+```
+
+
+## Run INSIGHT brain and thymus peaks vs anti peaks
+
+```{r peakIns}
+
+jamm_peaks_selected<-jamm_peaks %>% 
+  filter(tissue %in% c("brain","thymus")) %>%
+  inner_join(jamm_region_info_full %>% dplyr::select(region_id,total)) %>%
+  inner_join(jamm_region_identifiers, by=c("region_id"), suffix=c(".peak",".region")) %>%
+  # only select PD 2:9 because for PD 1 peak == CRE (or region)
+  filter(total %in% 2:9)
+
+jamm_peaks_selected %>% filter(start.peak <start.region | end.peak > end.region)
+
+
+#directly filter and do anti-join per bed file (i.e. tissue and specificity)
+target_dir="../general/bed/PeaksAntiPeaks"
+
+for (t in c("brain","thymus")){
+  for (i in 2:9){
+    
+    peaks<-jamm_peaks_selected %>%
+      filter(tissue==t, total==i) %>%
+      dplyr::transmute(seqnames=chromosome.peak, start=start.peak, end=end.peak) %>%
+      plyranges::as_granges()
+    
+    regions<-jamm_peaks_selected %>%
+      filter(tissue==t, total==i) %>%
+      dplyr::transmute(seqnames=chromosome.peak, start=start.region, end=end.region) %>%
+      plyranges::as_granges()
+    
+    antipeaks<-setdiff(regions, peaks) %>%
+      #exclude all 1bp "antipeaks"
+      plyranges::filter(width>1)
+      
+    write.table(as_tibble(antipeaks)[,1:3],paste0(target_dir,"/sp",i,"_",t,"_anti.bed"), 
+                quote=FALSE, row.names = FALSE,col.names = FALSE, sep="\t")
+    write.table(as_tibble(peaks)[,1:3],paste0(target_dir,"/sp",i,"_",t,"_peaks.bed"), 
+                quote=FALSE, row.names = FALSE,col.names = FALSE, sep="\t")
+  }
+}
+  
+#need to run this one on the original INSIGHT platform
+```
+
+
+Exclude the same CDS-overlapping region_ids , also on the peak level for fairness and consistency.
+```{r peakSubset}
+
+target_dir="../INSIGHT/PeaksAntiPeaks/"    
+for (i in c(2:9)){
+  for (t in c("brain","thymus")){
+    for (p in c("peaks","anti")){
+  
+  bed_file<-read.table(paste0("../general/bed/PeaksAntiPeaks/sp",i,"_",t,"_",p,".bed"))
+  colnames(bed_file)<-c("seqnames","start","end")
+  
+  dir.create(paste0(target_dir,t,"_",p), recursive=T, showWarnings = F)
+  sp<-filter_by_non_overlaps(as_granges(bed_file), hg19annot %>% filter(type=="CDS")) %>%
+    as_tibble()
+  write.table(sp,paste0(target_dir,t,"_",p,"/sp",i,"_",t,"_",p,".bed"), quote=FALSE, row.names = FALSE,col.names = FALSE, sep="\t")
+}}}
+
+#subset and recalculate INSIGHT
+system("sbatch /data/share/htp/pleiotropy/paper_data/INSIGHT/scripts/commands_for_PeaksAntiPeaks.sh")
+
+```
+
+
+NPC DA vs non-DA peaks. Steps:\\
+- filter for only NPC peaks
+- subset the bed file into PD and DA categories
+- run INSIGHT
+
+
+## DA NPCs stringent 1-to-1 set
+
+```{r stringent}
+
+stringent_set_INSIGHT<-readRDS("../DA_ipsc_npc/RDS/jammPeaks_vs_ATACPeaks_NPC_stringent.rds") %>%
+  filter(openness!="Not open") %>%
+  inner_join(jamm_region_identifiers %>% mutate(region_id = as.factor(region_id))) %>%
+  mutate(chromosome=paste0("chr",chromosome)) %>%
+  # remove region_ids that overlap with CDS
+  filter(!region_id %in% OL_CDS$region_id) %>%
+  mutate(DA=ifelse(openness == "Always open", "nonDA", "DA"))
+  
+target_dir="../INSIGHT/per_NPC_DA_stringent/"    
+
+for (i in c(1:9)){
+
+  bed_file<-read.table(paste0("../general/bed/full_sp_bed/sp",i,".bed"))
+  colnames(bed_file)<-c("chromosome","start","end")
+  
+  for (t in c("DA","nonDA")){
+  dir.create(paste0(target_dir,t), recursive=T, showWarnings = F)
+  sp<-inner_join(bed_file, stringent_set_INSIGHT %>% 
+                   filter(DA==t) %>% 
+    dplyr::select(chromosome,start,end))
+  write.table(sp,paste0(target_dir,t,"/sp",i,".bed"), quote=FALSE, row.names = FALSE,col.names = FALSE, sep="\t")
+}}
+
+#subset and recalculate INSIGHT
+system("sbatch /data/share/htp/pleiotropy/paper_data/INSIGHT/scripts/commands_for_NPC_DA_stringent.sh")
+
+```
+
+# Supplementary data
+
+## CGI vs no CGI
+
+```{r subsetIns}
+
+jamm_region_info_full<-readRDS("../general/region_summary/jamm_region_info_full.rds")
+DHS_annot<-readRDS("../distance_to_tss/DHS_to_gene.rds") %>%  
+  distinct(region_id, .keep_all = T) %>%
+  dplyr::select(-gene_id,-tissue) %>%
+  inner_join(jamm_region_identifiers) %>%
+  mutate(chromosome=paste0("chr",chromosome)) %>%
+  filter(!region_id %in% OL_CDS$region_id)
+
+# just CGI
+target_dir="../INSIGHT/CGI/"    
+
+for (i in c(1:9)){
+  
+  bed_file<-read.table(paste0("../general/bed/full_sp_bed/sp",i,".bed"))
+  colnames(bed_file)<-c("chromosome","start","end")
+  for (c in c("CGI", "noCGI")){
+
+      dir.create(paste0(target_dir,c), recursive=T, showWarnings = F)
+      sp<-inner_join(bed_file, DHS_annot %>% 
+                       filter(CGI==c) %>% 
+                     dplyr::select(chromosome,start,end))
+  write.table(sp,paste0(target_dir,c,"/sp",i,".bed"), quote=FALSE, row.names = FALSE,col.names = FALSE, sep="\t")
+}}
+
+system("sbatch /data/share/htp/pleiotropy/paper_data/INSIGHT/scripts/commands_for_CGI.sh")
+
+```
+
+## Contrast peaks with the max number of tissues vs "anti-peaks" with less than max
+
+```{r maxPeaksInsight}
+
+# generate max-tissue peaks vs not bed files (code for generation of this in pleiotropy1.Rmd) ####
+cov<-read.table("../general/bed/peak_coverage.bed")
+colnames(cov)<-c("chr","start","end","region_id","total","position","coverage")
+  
+cov_ranges2<-cov %>% as_tibble() %>%
+  dplyr::mutate(max=ifelse(total==coverage,"yes","no")) %>%
+  dplyr::mutate(seqnames=region_id,start=as.numeric(position), end=as.numeric(position)+1) %>% 
+  dplyr::select(seqnames, start,end, max) %>%
+  as_granges() %>%
+  group_by(max) %>%
+  reduce_ranges()
+
+cov_positions<-cov_ranges2 %>% as_tibble() %>%
+  dplyr::rename(region_id=seqnames) %>%
+  dplyr::mutate(region_id=as.factor(region_id)) %>%
+  inner_join(jamm_region_identifiers %>% 
+              dplyr::mutate(region_id=as.factor(region_id)),
+            by="region_id", suffix=c(".peak","")) %>%
+  inner_join(jamm_DNase_binary[,c("region_id","total")] %>% 
+              dplyr::mutate(region_id=as.factor(region_id))) %>%
+  dplyr::mutate(seqnames=paste0("chr",chromosome),
+         start.peak.coord=start+start.peak-1,
+         end.peak.coord=start+end.peak-1)
+
+
+#save;can take the PD1 from previous as peak=CRE
+for (i in 1:9){
+  
+  tmp<-cov_positions %>%
+      filter(total==i) %>%
+      dplyr::transmute(seqnames,sta=start.peak.coord, end=end.peak.coord)
+  
+  ll=dim(tmp)[1]
+  if( sum(tmp$end-tmp$sta)/2e7>1){
+    print(sum(tmp$end-tmp$sta)/2e7)
+    n<-ll/( sum(tmp$end-tmp$sta)/2e7 )
+    print(n)
+    n<-floor(n/1000)*1000
+    print(n)
+    #downsample
+    write.table(tmp[sample.int(n=dim(tmp)[1], size=n), ],sep="\t",row.names = F,col.names = F,quote=F,file=paste0("../general/bed/maxTissuePeak_bed/sp",i,".downs.bed"))
+  } else {
+    write.table(tmp, file=paste0("../general/bed/maxTissuePeak_bed/sp",i,".bed"),sep="\t",row.names = F,col.names = F,quote=F)
+  }}
+
+#need to run this manually on the website
+```
+
+## Separate these into max vs less
+
+```{r max}
+
+target_dir="../INSIGHT/maxTissuePeak/"    
+
+for (i in c("1.downs", "2.downs",3:9)){
+  
+  bed_file<-read.table(paste0("../general/bed/maxTissuePeak_bed/sp",i,".bed"))
+  colnames(bed_file)<-c("seqnames","start","end")
+  #colnames(bed_file)<-c("seqnames","start.peak.coord","end.peak.coord")
+  #exclude overlaps with CDS
+  bed_file<-filter_by_non_overlaps(as_granges(bed_file), 
+                                   hg19annot %>% filter(type=="CDS")) %>%
+    as_tibble() %>%
+    transmute(seqnames,start.peak.coord = start, end.peak.coord = end)
+  
+  #max
+  sp<-inner_join(bed_file, cov_positions %>% filter(max=="yes") %>% 
+    dplyr::transmute(seqnames, start.peak.coord, end.peak.coord))
+  
+  dir.create(paste0(target_dir,"maxPeak"), recursive=T, showWarnings = F)
+  write.table(sp,paste0(target_dir,"maxPeak/sp",i,"_maxPeak.bed"), quote=FALSE, row.names = FALSE,col.names = FALSE, sep="\t")
+
+  #no max
+  sp<-inner_join(bed_file, cov_positions %>% filter(max=="no") %>% 
+    dplyr::transmute(start.peak.coord, end.peak.coord))
+  dir.create(paste0(target_dir,"noMaxPeak"), recursive=T, showWarnings = F)
+  write.table(sp,paste0(target_dir,"noMaxPeak/sp",i,"_noMaxPeak.bed"), quote=FALSE, row.names = FALSE,col.names = FALSE, sep="\t")
+  
+}
+
+#subset and recalculate INSIGHT
+system("sbatch /data/share/htp/pleiotropy/paper_data/INSIGHT/scripts/commands_for_maxTissuePeaks.sh")
+
+```
