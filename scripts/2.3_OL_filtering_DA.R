@@ -15,9 +15,9 @@ library(patchwork)
 
 
 
-setwd("/data/share/htp/pleiotropy/paper_data/")
-source("DA_ipsc_npc/scripts/functions.R")
-source("DA_ipsc_npc/scripts/helper_functions.R")
+#setwd("/data/share/htp/pleiotropy/paper_data/")
+source("ATACseq/scripts/functions.R")
+source("ATACseq/scripts/helper_functions.R")
 
 
 regionColors <- c("#9CA578","#3288BD","#E37063")
@@ -30,12 +30,12 @@ names(specificityColors) <-  c(1:9)
 
 
 # get the original jamm peaks
-jamm_gr<-readRDS("general/region_summary/jamm_region_info_full.rds") %>%
+jamm_gr<-readRDS("roadmap_DHS_summaries/region_summary/jamm_region_info_full.rds") %>%
   dplyr::rename(seqnames=chromosome) %>%
   as_granges()
 
 # keep only similar length and N-free sequences 
-jamm_inATAC<-readRDS("DA_ipsc_npc/RDS/jamm_inATAC.rds") %>% 
+jamm_inATAC<-readRDS("ATACseq/RDS/jamm_inATAC.rds") %>% 
   filter(similar_width=="yes", Ns_hg38==0, Ns_macFas6==0)
 
 
@@ -130,7 +130,7 @@ OL_jamm_ATAC_mac6_loose<-calc_OL(mac6_jamm,
 # anly annotate whether the DHS coordinates overlap any NPC peak
 jamm_forATAC_NPC_all<-jamm_inATAC %>%
   #loose 550 genes due to this step
-  inner_join(readRDS("distance_to_tss/DHS_to_gene.rds") %>% 
+  inner_join(readRDS("CRE_to_Gene/DHS_to_gene.rds") %>% 
                distinct(region_id = as.factor(region_id), assignment, total, CGI)) %>%
   dplyr::select(region_id, assignment, total, CGI) %>% 
   dplyr::mutate(OL.hum = ifelse(region_id %in% OL_jamm_ATAC_hg38$region_id, T, F),
@@ -140,17 +140,14 @@ jamm_forATAC_NPC_all<-jamm_inATAC %>%
                               !OL.hum & OL.mac ~ "Macaque-only",
                               OL.hum & !OL.mac ~ "Human-only"))
 
-saveRDS(jamm_forATAC_NPC_all, "DA_ipsc_npc/RDS/jammPeaks_vs_ATACPeaks_NPC_all.rds")
+saveRDS(jamm_forATAC_NPC_all, "ATACseq/RDS/jammPeaks_vs_ATACPeaks_NPC_all.rds")
 
 
 
 # EXCLUDE MISMATCHES
 jamm_forATAC_NPC<-jamm_inATAC %>%
-  #loose 550 genes due to this step
-  inner_join(readRDS("distance_to_tss/DHS_to_gene.rds") %>% 
+  inner_join(readRDS("CRE_to_Gene/DHS_to_gene.rds") %>% 
                distinct(region_id = as.factor(region_id), assignment, total, CGI)) %>%
-  #inner_join(readRDS("../expression_conservation/Data/DGE_PD/DHS_to_gene_expr.rds") %>%
-  #             distinct(region_id = as.factor(region_id), assignment, total, CGI)) %>% 
   dplyr::select(region_id, assignment, total, CGI) %>% 
   filter(!region_id %in% multimatches$region_id) %>%
   left_join(OL_jamm_ATAC_hg38 %>% 
@@ -181,10 +178,10 @@ coord_hummatches<-hg38_peaks_NPC %>% as_tibble() %>%
   filter(peak_id.hum %in% jamm_forATAC_NPC$peak_id.hum[jamm_forATAC_NPC$openness=="Always open"]) %>% 
   as_granges()
 
-humNPC_onMacfas6<-translate_jamm(chain_file = "liftOvers/hg38ToMacFas6.over.chain", 
+humNPC_onMacfas6<-translate_jamm(chain_file = "macFas6_liftOver_chains/hg38ToMacFas6.over.chain", 
                                  coordinate_file = coord_hummatches, 
                                  extend = 50,
-                                 reverse_chain_file = "liftOvers/macFas6ToHg38.over.chain") %>%
+                                 reverse_chain_file = "macFas6_liftOver_chains/macFas6ToHg38.over.chain") %>%
   as_tibble() %>% mutate(seqnames = gsub("chr", "", seqnames), peak_id.hum=region_id)
 
 
@@ -211,7 +208,7 @@ noOL<-jamm_forATAC_NPC %>%
 
 stringent_set<-jamm_forATAC_NPC %>% anti_join(noOL, by = join_by(peak_id.hum, peak_id.mac))
 
-saveRDS(stringent_set, "DA_ipsc_npc/RDS/jammPeaks_vs_ATACPeaks_NPC_stringent.rds")
+saveRDS(stringent_set, "ATACseq/RDS/jammPeaks_vs_ATACPeaks_NPC_stringent.rds")
 
 
 #just a checkup: indeed, also no LO is excluded as expected
@@ -225,19 +222,19 @@ saveRDS(stringent_set, "DA_ipsc_npc/RDS/jammPeaks_vs_ATACPeaks_NPC_stringent.rds
 # DA analysis -------------------------------------------------------------
 
 # we only care about the npcs currently
-jamm_forATAC_NPC_all<-readRDS("DA_ipsc_npc/RDS/jammPeaks_vs_ATACPeaks_NPC_all.rds") %>%
+jamm_forATAC_NPC_all<-readRDS("ATACseq/RDS/jammPeaks_vs_ATACPeaks_NPC_all.rds") %>%
   filter(openness!="Not open")
 
 
 # get the count matrix
 # first 4 columns are chr, start, end, region_id
-hum_counts<-setNames(read.table("DA_ipsc_npc/count_tables/hg38_counts.bed") %>% 
+hum_counts<-setNames(read.table("ATACseq/count_tables/hg38_counts.bed") %>% 
                        as_tibble(),
                      c("seqnames", "start", "end", "region_id", 
                        "iPSC_01.hg", "iPSC_02.hg", 
                        "NPC_05.hg", "NPC_06.hg")) 
 
-mac_counts<-setNames(read.table("DA_ipsc_npc/count_tables/macFas6_counts.bed") %>%
+mac_counts<-setNames(read.table("ATACseq/count_tables/macFas6_counts.bed") %>%
                        as_tibble(), 
                      c("seqnames", "start", "end", "region_id", 
                        "iPSC_03.mac", "iPSC_04.mac", 
@@ -250,10 +247,10 @@ count_matrix<-inner_join(mac_counts %>% dplyr::select(-seqnames,-start,-end),
   mutate(region_id=paste0("region_id.",region_id)) %>%
   column_to_rownames("region_id")
 
-saveRDS(count_matrix,"DA_ipsc_npc/count_tables/count_matrix_4dds.rds")
+saveRDS(count_matrix,"ATACseq/count_tables/count_matrix_4dds.rds")
 
 
-metaData<-read.table("DA_ipsc_npc/sampleinfo", header = T) 
+metaData<-read.table("ATACseq/sampleinfo", header = T) 
 metaData<-metaData %>%
   mutate(short_number = formatC(short_number, width = 2, format = "d", flag = "0"),
          sample=paste0(cell_type, "_", short_number, ifelse(species=="human", ".hg", ".mac")))
@@ -269,5 +266,5 @@ count_matrix<-count_matrix[,match(rownames(metaData),colnames(count_matrix))]
 atacDDS <- DESeqDataSetFromMatrix(count_matrix, metaData, 
                                   design = ~ species + cell_type + species*cell_type)
 atacDDS <- DESeq(atacDDS)
-saveRDS(atacDDS,"DA_ipsc_npc/RDS/atacDDS.rds")
+saveRDS(atacDDS,"ATACseq/RDS/atacDDS.rds")
 

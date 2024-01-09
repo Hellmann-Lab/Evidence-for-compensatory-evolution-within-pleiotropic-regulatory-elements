@@ -5,15 +5,15 @@ library(JASPAR2020)
 library(TFBSTools)
 library(DESeq2)
 
-setwd("/data/share/htp/pleiotropy/paper_data/")
+#setwd("/data/share/htp/pleiotropy/paper_data/")
 
 specificityColors <- c( "#A3753B", "#CC9B57", "#E7CF97", "#F8EDD0", "#F7F7F7", "#D2EEEA", "#99D7CE", "#5DACA5", "#33847E")
 names(specificityColors) <-  c(1:9)
 
 speciesCols<-c("human"="#8B8BA7","macaque"="#D1D1DC")
 
-source("DA_ipsc_npc/scripts/TFBS_analysis_functions_ATAC.R")
-source("DA_ipsc_npc/scripts/TFBS_plotting_functions_ATAC.R")
+source("ATACseq/scripts/TFBS_analysis_functions_ATAC.R")
+source("ATACseq/scripts/TFBS_plotting_functions_ATAC.R")
 
 
 
@@ -21,19 +21,19 @@ source("DA_ipsc_npc/scripts/TFBS_plotting_functions_ATAC.R")
 # LOAD CRE INFO -----------------------------------------------------------
 
 # need the coords in hg38 of the region_ids that have ORTHOLOGUES
-jamm_inATAC<-readRDS("DA_ipsc_npc/cbust/RDS/jamm_inATAC.rds") %>%
+jamm_inATAC<-readRDS("ATACseq/cbust/RDS/jamm_inATAC.rds") %>%
   filter(similar_width=="yes", Ns_macFas6==0, Ns_hg38==0)
 
 # coordinate info hg19 (phyloP etc relevant)
-jamm_hg19<-readRDS("general/region_summary/jamm_region_info_full.rds") %>% 
+jamm_hg19<-readRDS("roadmap_DHS_summaries/region_summary/jamm_region_info_full.rds") %>% 
   transmute(seqnames = chromosome, start, end, region_id, total)
 
 # get the chromosomes and files where these region_ids can be found (cbust-relevant)
-locfile<-setNames(read.table("DA_ipsc_npc/cbust/RDS/TFBS_position/selected_ids.txt"), c("region_id","human_file", "macaque_file"))
+locfile<-setNames(read.table("ATACseq/cbust/RDS/TFBS_position/selected_ids.txt"), c("region_id","human_file", "macaque_file"))
 
 
 # CRE characterization
-seq_vs_TFBS_NPCs<-readRDS("DA_ipsc_npc/cbust/RDS/seq_vs_TFBS_10perc.rds") %>%
+seq_vs_TFBS_NPCs<-readRDS("ATACseq/cbust/RDS/seq_vs_TFBS_10perc.rds") %>%
   filter(openness_stringent %in% c("Human-only", "Macaque-only", "Always open"))
 
 
@@ -42,7 +42,7 @@ seq_vs_TFBS_NPCs<-readRDS("DA_ipsc_npc/cbust/RDS/seq_vs_TFBS_10perc.rds") %>%
 # EXPRESSION & CRE-GENE ASSOCIATION ---------------------------------------
 
 # expressed TFs in npcs
-expressedTFs<-readRDS("DA_ipsc_npc/cbust/expressedTFs.rds") %>%
+expressedTFs<-readRDS("ATACseq/cbust/expressedTFs.rds") %>%
   dplyr::select(-IC_rank, -IC, -class) %>% dplyr::rename(TF_gene_id = gene_id)
 
 # get annotation gtf: i'm only using symbols and gene_ids 
@@ -53,7 +53,7 @@ gene_to_symbol <- rtracklayer::import("gtf/gencode.v19.annotation.gtf.gz") %>%
 
 
 # expression
-exprdds <- readRDS("expression_conservation/RDS/dds_clean.rds")
+exprdds <- readRDS("RNAseq/RDS/dds_clean.rds")
 DE<-lapply( c("NPC"), function(i){
   tmp <- colData(exprdds)
   tmp <- tmp[tmp$Differentiation == i,]
@@ -69,7 +69,7 @@ DE<-lapply( c("NPC"), function(i){
 
 
 # identify the subset of CREs that have been associated with genes
-DHS_genes <- readRDS("distance_to_tss/DHS_to_gene.rds") %>%
+DHS_genes <- readRDS("CRE_to_Gene/DHS_to_gene.rds") %>%
   dplyr::select(-tissue) %>%
   distinct(region_id, gene_id, assignment, total, distance) %>%
   group_by(gene_id) %>%  
@@ -81,19 +81,19 @@ DHS_genes <- readRDS("distance_to_tss/DHS_to_gene.rds") %>%
 
 
 # load TF filter for being among the top 10% for that CRE
-dd_10perc<-data.table::fread("DA_ipsc_npc/cbust/top10perc_motifs_exprNPC_dt.csv")
+dd_10perc<-data.table::fread("ATACseq/cbust/top10perc_motifs_exprNPC_dt.csv")
 
 
 
 # ADDITIONAL EXTERNAL INFORMATION -----------------------------------------
 
 # metadata of GTRD database with ids and celltypes
-metdat<-read.table("DA_ipsc_npc/chipseq_gtrd/metadata_chipseq.txt", 
+metdat<-read.table("ATACseq/chipseq_gtrd/metadata_chipseq.txt", 
                    header = T, fill = T, sep="\t") %>%
   dplyr::mutate(id=as.character(id))
 
 # topGO neurogenesis category
-neuro<-read.table("DA_ipsc_npc/chipseq_gtrd/neurogenesis_GO", fill = TRUE)
+neuro<-read.table("ATACseq/chipseq_gtrd/neurogenesis_GO", fill = TRUE)
 
 length(unique(neuro$V3))
 

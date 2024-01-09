@@ -61,10 +61,10 @@ myDriver=dbDriver("MySQL")
 con=dbConnect(myDriver, host="chimp.anthro.bzm",username="zane",password="zanezane", dbname="peters_stuff")
 #dbListTables(con)
 
-jamm_region_identifiers<-readRDS("../general/region_summary/jamm_region_identifiers.rds")
-jamm_DNase_binary<-readRDS("../general/region_summary/jamm_DNase_binary.rds")
-jamm_region_info_full<-readRDS("../general/region_summary/jamm_region_info_full.rds")
-jamm_peaks<-readRDS("../general/region_summary/jamm_peaks.rds")
+jamm_region_identifiers<-readRDS("../roadmap_DHS_summaries/region_summary/jamm_region_identifiers.rds")
+jamm_DNase_binary<-readRDS("../roadmap_DHS_summaries/region_summary/jamm_DNase_binary.rds")
+jamm_region_info_full<-readRDS("../roadmap_DHS_summaries/region_summary/jamm_region_info_full.rds")
+jamm_peaks<-readRDS("../roadmap_DHS_summaries/region_summary/jamm_peaks.rds")
 
 # identify region_ids that overlap with CDS
 OL_CDS<-filter_by_overlaps(as_granges(jamm_region_info_full %>% 
@@ -440,7 +440,7 @@ jamm_bed<-jamm_region_info_full %>%
   dplyr::select(seqnames, start, end, region_id, total, CGI) %>%
   as_granges()
 
-DHS_annot<-readRDS("../distance_to_tss/DHS_to_gene.rds") %>%
+DHS_annot<-readRDS("../CRE_to_Gene/DHS_to_gene.rds") %>%
   distinct(region_id, .keep_all = T)
 
 
@@ -505,11 +505,11 @@ p_phyloP_point<-phyloP_DHS %>%
 
 ```{r cpgcons}
 
-DHS_annot<-readRDS("../distance_to_tss/DHS_to_gene.rds") %>%
+DHS_annot<-readRDS("../CRE_to_Gene/DHS_to_gene.rds") %>%
   distinct(region_id, .keep_all = T)
 
 # keep only similar length and N-free sequences
-jamm_inATAC<-readRDS("../DA_ipsc_npc/RDS/jamm_inATAC.rds") %>%
+jamm_inATAC<-readRDS("../ATACseq/RDS/jamm_inATAC.rds") %>%
   filter(similar_width=="yes", Ns_hg38==0, Ns_macFas6==0) %>%
   dplyr::mutate(GC_cons = 1-abs(GC_content.mac - GC_content.hg),
                 CpG_obs_exp_cons = 1-abs(CpG_obs_exp.mac - CpG_obs_exp.hg)) %>%

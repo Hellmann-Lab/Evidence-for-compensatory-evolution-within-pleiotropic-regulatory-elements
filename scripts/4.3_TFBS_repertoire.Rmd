@@ -59,16 +59,16 @@ basic_theme_ins2<-  theme(axis.title=element_text(size=8),
 
 ```{r dat}
 
-source("../DA_ipsc_npc/scripts/TFBS_plotting_functions_ATAC.R")
-source("../DA_ipsc_npc/scripts/TFBS_analysis_functions_ATAC.R")
+source("../ATACseq/scripts/TFBS_plotting_functions_ATAC.R")
+source("../ATACseq/scripts/TFBS_analysis_functions_ATAC.R")
 source("tf_functions.R")
 
-dnase_jamm_long<-readRDS("../general/region_summary/jamm_per_tissue.rds") %>%
+dnase_jamm_long<-readRDS("../roadmap_DHS_summaries/region_summary/jamm_per_tissue.rds") %>%
   mutate(region_id = as.factor(region_id))
 
 
-jamm_region_info_full<-readRDS("../general/region_summary/jamm_region_info_full.rds")
-DHS_to_gene<-readRDS("../distance_to_tss/DHS_to_gene.rds") %>%
+jamm_region_info_full<-readRDS("../roadmap_DHS_summaries/region_summary/jamm_region_info_full.rds")
+DHS_to_gene<-readRDS("../CRE_to_Gene/DHS_to_gene.rds") %>%
     mutate(assignment=gsub("enh","Enhancer",assignment),
            assignment=gsub("prom","Promoter",assignment),
            total = as.factor(total),
@@ -78,19 +78,19 @@ DHS_to_gene<-readRDS("../distance_to_tss/DHS_to_gene.rds") %>%
 DHS_to_gene %>% group_by(region_id) %>% summarise(n=length(unique(assignment))) %>% filter(n>1)
 
 # select only similar-length orthologues without Ns (for the DA stuff)
-jammSeq_inATAC<-readRDS("../DA_ipsc_npc/RDS/jamm_inATAC.rds") %>% 
+jammSeq_inATAC<-readRDS("../ATACseq/RDS/jamm_inATAC.rds") %>% 
   filter(similar_width=="yes", Ns_hg38==0, Ns_macFas6==0) %>% ungroup()
 
 
-seq_vs_TFBS<-readRDS("../DA_ipsc_npc/cbust/RDS/seq_vs_TFBS_10perc.rds")
+seq_vs_TFBS<-readRDS("../ATACseq/cbust/RDS/seq_vs_TFBS_10perc.rds")
 
 ```
-## Load TFBS repertoure conservation stuff
+## Load TFBS repertoire conservation stuff
 
 ```{r load}
 
 
-dd_10perc_exprTissues_filt<-data.table::fread("../DA_ipsc_npc/cbust/top10perc_motifs_exprTissues_dt.csv")
+dd_10perc_exprTissues_filt<-data.table::fread("../ATACseq/cbust/top10perc_motifs_exprTissues_dt.csv")
 
 dd_10perc_exprTissues<- dd_10perc_exprTissues_filt %>%
   calculate_per_region_TF_stats() %>%
@@ -105,7 +105,7 @@ TFBS_tissues<-label_tissue(dd_10perc_exprTissues, dnase_jamm_long) %>%
 
 
 # NPC stuff
-stringent_set_NPC<-readRDS("../DA_ipsc_npc/RDS/jammPeaks_vs_ATACPeaks_NPC_stringent.rds") %>%
+stringent_set_NPC<-readRDS("../ATACseq/RDS/jammPeaks_vs_ATACPeaks_NPC_stringent.rds") %>%
   filter(openness!="Not open") %>%
   mutate(DA=ifelse(openness == "Always open", "Conserved", "Not conserved"),
          region_id = as.factor(region_id),
@@ -114,10 +114,10 @@ stringent_set_NPC<-readRDS("../DA_ipsc_npc/RDS/jammPeaks_vs_ATACPeaks_NPC_string
 
 
 
-#dd <-  data.table::fread("../DA_ipsc_npc/cbust/topNmotifs_ipsc_npc_unfiltered_dt.csv" )
+#dd <-  data.table::fread("../ATACseq/cbust/topNmotifs_ipsc_npc_unfiltered_dt.csv" )
 #dd_10perc_exprNPC_filt<- dd[ minminRNK<=ceiling(nMotif*.1) ][ ,minminRNK:=NULL ][,nMotif:=NULL]
-#data.table::fwrite(dd_10perc_exprNPC_filt, "../DA_ipsc_npc/cbust/top10perc_motifs_exprNPC_dt.csv")
-dd_10perc_exprNPC_filt <-  data.table::fread("../DA_ipsc_npc/cbust/top10perc_motifs_exprNPC_dt.csv" )
+#data.table::fwrite(dd_10perc_exprNPC_filt, "../ATACseq/cbust/top10perc_motifs_exprNPC_dt.csv")
+dd_10perc_exprNPC_filt <-  data.table::fread("../ATACseq/cbust/top10perc_motifs_exprNPC_dt.csv" )
 
 
 dd_10perc_stringent <- dd_10perc_exprNPC_filt %>% 
@@ -303,7 +303,7 @@ ggsave("../figures/figure5_combis.pdf", fig4,height = 180, width=162.5, units="m
 ```{r shuffle}
 
 
-dd_10perc<-data.table::fread("../DA_ipsc_npc/cbust/top10perc_motifs_exprNPC_dt.csv")
+dd_10perc<-data.table::fread("../ATACseq/cbust/top10perc_motifs_exprNPC_dt.csv")
 
 dd_10perc_shuffled_list<-lapply(1:10, function(x){
   
@@ -384,8 +384,8 @@ pp_shuffled_enh<-shuffling_summary %>%
 motifPD_cols<-c("#33847E", "grey90", "#A3753B")
 names(motifPD_cols)<-c("PD9","other", "PD1")
 
-motif_PD_ranks<-readRDS("../DA_ipsc_npc/cbust/RDS/motif_PD_ranks.rds") %>%
-  inner_join(readRDS("../DA_ipsc_npc/cbust/expressedTFs_inTissues.rds"))
+motif_PD_ranks<-readRDS("../ATACseq/cbust/RDS/motif_PD_ranks.rds") %>%
+  inner_join(readRDS("../ATACseq/cbust/expressedTFs_inTissues.rds"))
 
 library(TFBSTools)
 library(universalmotif)

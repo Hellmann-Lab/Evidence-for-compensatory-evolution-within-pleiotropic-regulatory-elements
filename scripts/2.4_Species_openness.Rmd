@@ -13,7 +13,9 @@ library(ggplot2)
 libs<-c("ggplot2","ggpubr","RMySQL","tidyverse","cowplot","data.table","GenomicRanges", "patchwork", "broom", "DESeq2", "figpatch")
 
 sapply(libs, require, character.only=T)
-source("../DA_ipsc_npc/scripts/TFBS_plotting_functions_ATAC.R")
+source("../ATACseq/scripts/TFBS_plotting_functions_ATAC.R")
+source("../ATACseq/scripts/TFBS_analysis_functions_ATAC.R")
+
 
 tissueColors <- c( "#9E0142" ,"#D53E4F", "#F46D43", "#FDAE61", "#FFD92F" ,"#ABDDA4", "#66C2A5", "#3288BD", "#5E4FA2")
 names(tissueColors) <-  c("adrenal gland", "brain", "heart", "kidney", "large intestine", "lung", "muscle", "stomach", "thymus")
@@ -56,7 +58,7 @@ basic_theme_ins<-  theme(axis.title=element_text(size=9.5),
 
 ```{r pp}
 
-stringent_set<-readRDS("../DA_ipsc_npc/RDS/jammPeaks_vs_ATACPeaks_NPC_stringent.rds") %>%
+stringent_set<-readRDS("../ATACseq/RDS/jammPeaks_vs_ATACPeaks_NPC_stringent.rds") %>%
   dplyr::mutate(openness=gsub("only","specific",openness),
                 openness=ifelse(openness=="Always open", "Conserved", openness))
 
@@ -110,12 +112,12 @@ peakOL_plot_NPCs <- stringent_set %>%
 
 ```{r GetLFCs}
 
-DHS_to_gene <- readRDS("../distance_to_tss/DHS_to_gene.rds") %>%
+DHS_to_gene <- readRDS("../CRE_to_Gene/DHS_to_gene.rds") %>%
   distinct(region_id, gene_id, total, CGI, assignment)
-jamm_forATAC_NPC_all<-readRDS("../DA_ipsc_npc/RDS/jammPeaks_vs_ATACPeaks_NPC_all.rds")
+jamm_forATAC_NPC_all<-readRDS("../ATACseq/RDS/jammPeaks_vs_ATACPeaks_NPC_all.rds")
 
 
-atacDDS <- readRDS("../DA_ipsc_npc/RDS/atacDDS.rds")
+atacDDS <- readRDS("../ATACseq/RDS/atacDDS.rds")
 DA<-lapply( c("NPC","iPSC"), function(i){
     tmp <- colData(atacDDS)
     tmp <- tmp[tmp$cell_type == i,]
@@ -130,7 +132,7 @@ DA<-lapply( c("NPC","iPSC"), function(i){
       inner_join(DHS_to_gene)
 }) %>% bind_rows
 
-exprdds <- readRDS("../expression_conservation/RDS/dds_clean.rds")
+exprdds <- readRDS("../RNAseq/RDS/dds_clean.rds")
 DE<-lapply( c("NPC","iPSC"), function(i){
   tmp <- colData(exprdds)
   tmp <- tmp[tmp$Differentiation == i,]
@@ -145,9 +147,9 @@ DE<-lapply( c("NPC","iPSC"), function(i){
 
 comb.lfc<- DE %>% left_join(DA, by=c("gene_id","celltype"), suffix=c("",".da"))
 
-saveRDS(comb.lfc, "../expression_conservation/RDS/DE_DA_table.rds")
+saveRDS(comb.lfc, "../RNAseq/RDS/DE_DA_table.rds")
 
-expr_pleio<- readRDS("../expression/summarized_expression_allTissues.rds") %>% 
+expr_pleio<- readRDS("../roadmap_expression_summaries/summarized_expression_allTissues.rds") %>% 
   group_by(gene_id) %>% 
   summarise( expr_pleio = length(tissue),
              expr_pleio = factor(expr_pleio, levels=1:9 )) 
@@ -300,7 +302,7 @@ Some heatmaps and odds per CGI
 
 ```{r odds_npcs}
 
-atacDDS <- readRDS("../DA_ipsc_npc/RDS/atacDDS.rds")
+atacDDS <- readRDS("../ATACseq/RDS/atacDDS.rds")
 vsdMat<-assay(varianceStabilizingTransformation(atacDDS))
 vsdMat2<-vsdMat[,grepl("NPC", colnames(vsdMat))]
 # Heatmap for most variable regions
@@ -329,7 +331,7 @@ dev.off()
 
 
 
-exprdds <- readRDS("../expression_conservation/RDS/dds_clean.rds")
+exprdds <- readRDS("../RNAseq/RDS/dds_clean.rds")
 vsdMat<-assay(varianceStabilizingTransformation(exprdds))
 vsdMat2<-vsdMat[,grepl("d5|d7|d9", colnames(vsdMat))]
 # Heatmap for most variable regions
@@ -431,7 +433,7 @@ ggsave("../figures/SuplFig2_combined.pdf", (sup2A | sup2B) / plot_grid(enrichTes
 
 ```{r peak_clusters}
 
-jamm_DNase_binary<-readRDS("../general/region_summary/jamm_region_info_full.rds") %>%
+jamm_DNase_binary<-readRDS("../roadmap_DHS_summaries/region_summary/jamm_region_info_full.rds") %>%
   dplyr::select(region_id, adrenal_gland, brain, heart, kidney, large_intestine, lung, muscle, stomach, thymus, total)
   
 

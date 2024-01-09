@@ -63,15 +63,15 @@ basic_theme_ins2<-  theme(axis.title=element_text(size=8),
 
 ```{r dat}
 
-source("../DA_ipsc_npc/scripts/TFBS_plotting_functions_ATAC.R")
-source("../DA_ipsc_npc/scripts/TFBS_analysis_functions_ATAC.R")
+source("../ATACseq/scripts/TFBS_plotting_functions_ATAC.R")
+source("../ATACseq/scripts/TFBS_analysis_functions_ATAC.R")
 source("tf_functions.R")
 
-dnase_jamm_long<-readRDS("../general/region_summary/jamm_per_tissue.rds") %>%
+dnase_jamm_long<-readRDS("../roadmap_DHS_summaries/region_summary/jamm_per_tissue.rds") %>%
   mutate(region_id = as.factor(region_id))
 
-jamm_region_info_full<-readRDS("../general/region_summary/jamm_region_info_full.rds")
-DHS_to_gene<-readRDS("../distance_to_tss/DHS_to_gene.rds") %>%
+jamm_region_info_full<-readRDS("../roadmap_DHS_summaries/region_summary/jamm_region_info_full.rds")
+DHS_to_gene<-readRDS("../CRE_to_Gene/DHS_to_gene.rds") %>%
     mutate(assignment=gsub("enh","Enhancer",assignment),
            assignment=gsub("prom","Promoter",assignment),
            total = as.factor(total),
@@ -81,7 +81,7 @@ DHS_to_gene<-readRDS("../distance_to_tss/DHS_to_gene.rds") %>%
 DHS_to_gene %>% group_by(region_id) %>% summarise(n=length(unique(assignment))) %>% filter(n>1)
 
 # select only similar-length orthologues without Ns (for the DA stuff)
-jammSeq_inATAC<-readRDS("../DA_ipsc_npc/RDS/jamm_inATAC.rds") %>% 
+jammSeq_inATAC<-readRDS("../ATACseq/RDS/jamm_inATAC.rds") %>% 
   filter(similar_width=="yes", Ns_hg38==0, Ns_macFas6==0) %>% ungroup()
 
 ```
@@ -90,9 +90,9 @@ jammSeq_inATAC<-readRDS("../DA_ipsc_npc/RDS/jamm_inATAC.rds") %>%
 
 ```{r exprTF}
 
-expressedTFs_tissues<-readRDS("../DA_ipsc_npc/cbust/expressedTFs_inTissues.rds")
+expressedTFs_tissues<-readRDS("../ATACseq/cbust/expressedTFs_inTissues.rds")
 
-n_tissues_expressedTFs<-readRDS("../expression/summarized_expression_allTissues.rds") %>%
+n_tissues_expressedTFs<-readRDS("../roadmap_expression_summaries/summarized_expression_allTissues.rds") %>%
   filter(gene_id %in% expressedTFs_tissues$gene_id) %>%
   #inner_join(expressedTFs_tissues) %>%
   dplyr::group_by(gene_id) %>%
@@ -124,12 +124,12 @@ ggsave("../figures/TF_expression_PD.pdf", height = 4*0.8, width = 5*0.8)
 ```{r div}
 # enh/prom
 
-#dd_exprTissues <-  data.table::fread("../DA_ipsc_npc/cbust/topNmotifs_exprTissues_unfiltered_dt.csv")
+#dd_exprTissues <-  data.table::fread("../ATACseq/cbust/topNmotifs_exprTissues_unfiltered_dt.csv")
 # top 10% ####
 #dd_10perc_exprTissues_filt<- dd_exprTissues[ minminRNK<=ceiling(nMotif*.1) ][ ,minminRNK:=NULL ][,nMotif:=NULL]
-#data.table::fwrite(dd_10perc_exprTissues_filt, "../DA_ipsc_npc/cbust/top10perc_motifs_exprTissues_dt.csv")
+#data.table::fwrite(dd_10perc_exprTissues_filt, "../ATACseq/cbust/top10perc_motifs_exprTissues_dt.csv")
 
-dd_10perc_exprTissues_filt<-data.table::fread("../DA_ipsc_npc/cbust/top10perc_motifs_exprTissues_dt.csv")
+dd_10perc_exprTissues_filt<-data.table::fread("../ATACseq/cbust/top10perc_motifs_exprTissues_dt.csv")
 
 dd_10perc_exprTissues<- dd_10perc_exprTissues_filt %>%
   calculate_per_region_TF_stats() %>%
@@ -198,12 +198,12 @@ dd_perMotif_tissues<-dd_10perc_exprTissues_filt %>%
   inner_join(jamm_region_info_full %>% distinct(region_id, total)) %>%
   dplyr::mutate(region_id = as.factor(region_id)) 
 
-expressedInTissue<-readRDS("../expression/summarized_expression_allTissues.rds")
+expressedInTissue<-readRDS("../roadmap_expression_summaries/summarized_expression_allTissues.rds")
 
 
 tissues_list<-lapply(unique(expressedInTissue$tissue), function(tis){
   
-  sel_cres<-readRDS("../distance_to_tss/DHS_to_gene.rds") %>% filter(tissue == tis)
+  sel_cres<-readRDS("../CRE_to_Gene/DHS_to_gene.rds") %>% filter(tissue == tis)
   ranking_by_abundance(tis = tis, 
                        reg_id_selection = sel_cres$region_id, 
                        dd = dd_perMotif_tissues) %>% 
@@ -269,7 +269,7 @@ combined_ranks_all_wide<-combined_ranks_all %>%
 ```{r stripes}
 
 library(readxl)
-stripes<-read_excel("../DA_ipsc_npc/stripeTF/1-s2.0-S1097276522006128-mmc2.xlsx", sheet = 5,
+stripes<-read_excel("../ATACseq/stripeTF/1-s2.0-S1097276522006128-mmc2.xlsx", sheet = 5,
                     skip=1) %>% filter(`Percentage of total samples...7`>=0.9) %>% pull(`Human Stripe Factors`)
 
 pioneers<-c("ASCL1", "CEBPA", "EBF1", "ESRRB", "FOXA1", "GATA1", "GATA3", "GATA4", "AR", "KLF4", "NEUROD1", "NRF1", "POU5F1", "TP53", "PAX7", "PU.1")
@@ -296,7 +296,7 @@ combined_ranks_all2<-combined_ranks_all_wide %>%
   ungroup() %>%
   as.data.frame() 
 
-saveRDS(combined_ranks_all2, "../DA_ipsc_npc/cbust/RDS/motif_PD_ranks.rds")
+saveRDS(combined_ranks_all2, "../ATACseq/cbust/RDS/motif_PD_ranks.rds")
 
 
 
@@ -383,7 +383,7 @@ p_PD9<-plot_topGO(topGO_PD9_allTissues$topGO_PD %>%
 # tissue-specific ones
 tissues_list_solo<-lapply(unique(expressedInTissue$tissue), function(tis){
   
-  sel_cres<-readRDS("../distance_to_tss/DHS_to_gene.rds") %>% filter(tissue == tis)
+  sel_cres<-readRDS("../CRE_to_Gene/DHS_to_gene.rds") %>% filter(tissue == tis)
   sel_motifs<-combined_ranks_all_wide %>% 
     dplyr::filter(PD1==1 & grepl(tis,tissue_original)) %>%
     dplyr::pull(cluster_id_or_motif_name)

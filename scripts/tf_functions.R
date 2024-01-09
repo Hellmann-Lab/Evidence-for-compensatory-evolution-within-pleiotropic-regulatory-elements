@@ -127,14 +127,14 @@ ranking_by_abundance<-function(tis = NULL, reg_id_selection, dd){
   
   print(tis)
   # select only expressed TFs
-  expressedTFs_tissues<-readRDS("../DA_ipsc_npc/cbust/expressedTFs_inTissues.rds")
+  expressedTFs_tissues<-readRDS("../ATACseq/cbust/expressedTFs_inTissues.rds")
   
   if (!is.null(tis)){
-    expressedInTissue<-readRDS("../expression/summarized_expression_allTissues.rds") %>%
+    expressedInTissue<-readRDS("../roadmap_expression_summaries/summarized_expression_allTissues.rds") %>%
       filter(tissue == tis) %>% 
       inner_join(expressedTFs_tissues %>% dplyr::select(gene_id, motif_ID))
   } else {
-    expressedInTissue<-readRDS("../expression/summarized_expression_allTissues.rds") %>%
+    expressedInTissue<-readRDS("../roadmap_expression_summaries/summarized_expression_allTissues.rds") %>%
       distinct(gene_id, .keep_all = T) %>% 
       inner_join(expressedTFs_tissues %>% dplyr::select(gene_id, motif_ID))
   }
@@ -168,14 +168,14 @@ ranks_to_topGO<-function(tis = NULL, ranked=NULL, PD, FC = 1.5, n_cnet=4, PD_fil
   
   print(tis)
   # select only expressed TFs
-  expressedTFs_tissues<-readRDS("../DA_ipsc_npc/cbust/expressedTFs_inTissues.rds")
+  expressedTFs_tissues<-readRDS("../ATACseq/cbust/expressedTFs_inTissues.rds")
   
   if (!is.null(tis)){
-    expressedInTissue<-readRDS("../expression/summarized_expression_allTissues.rds") %>%
+    expressedInTissue<-readRDS("../roadmap_expression_summaries/summarized_expression_allTissues.rds") %>%
       filter(tissue == tis) %>% 
       inner_join(expressedTFs_tissues %>% dplyr::select(gene_id, motif_ID))
   } else {
-    expressedInTissue<-readRDS("../expression/summarized_expression_allTissues.rds") %>%
+    expressedInTissue<-readRDS("../roadmap_expression_summaries/summarized_expression_allTissues.rds") %>%
       distinct(gene_id, .keep_all = T) %>% 
       inner_join(expressedTFs_tissues %>% dplyr::select(gene_id, motif_ID))
   }

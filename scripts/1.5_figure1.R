@@ -12,7 +12,7 @@ library(tidyverse)
 library(patchwork)
 library(figpatch)
 
-setwd("/data/share/htp/pleiotropy/paper_data/")
+#setwd("/data/share/htp/pleiotropy/paper_data/")
 
 
 tissueColors <- c( "#9E0142" ,"#D53E4F", "#F46D43", "#FDAE61", "#FFD92F" ,"#ABDDA4", "#66C2A5", "#3288BD", "#5E4FA2")
@@ -38,9 +38,10 @@ theme_set( theme_bw( base_size = 8 ) +
 
 # Sample Plot -------------------------------------------------------------
 
-sampleSize<-readRDS("expression/srx_expression_info.rds") %>% 
-  dplyr::select(srx_id, donor_id, tissue) %>%
-  mutate(tissue=gsub("_", " ", tissue))
+sampleSize<-readRDS("roadmap_DHS_summaries/srx_info.rds") %>% 
+  dplyr::select(srx_id, donor_id, tissue, experiment) %>%
+  mutate(tissue=gsub("_", " ", tissue)) %>% 
+  filter(experiment == "DNase hypersensitivity")
 
 sample_plot <-  sampleSize %>% filter(tissue %in% names(tissueColors2)) %>% 
   ggplot( aes(x = tissue, fill = tissue)) + geom_bar() + 
@@ -58,10 +59,10 @@ sample_plot
 
 # Peaks per tissue --------------------
 
-dhs <- readRDS("general/region_summary/jamm_region_info_full.rds")
+dhs <- readRDS("roadmap_DHS_summaries/region_summary/jamm_region_info_full.rds")
 dhs_long <- dhs %>% pivot_longer( cols = adrenal_gland:thymus, names_to = "tissue", values_to = "open") %>%  filter(open == 1)
 
-DHS_to_gene<-readRDS("distance_to_tss/DHS_to_gene.rds")
+DHS_to_gene<-readRDS("CRE_to_Gene/DHS_to_gene.rds")
 
 pleio_tissue <- dhs_long %>%  inner_join( DHS_to_gene ) %>% 
   group_by(tissue,total, assignment) %>%  
@@ -130,7 +131,7 @@ cre_size <-  pleio_tissue %>%
 
 # Expression pleiotropy ---------------------------------------------------
 
-summarized_expression_all<- readRDS("expression/summarized_expression_allTissues.rds") %>% 
+summarized_expression_all<- readRDS("roadmap_expression_summaries/summarized_expression_allTissues.rds") %>% 
                       group_by(gene_id) %>% 
                       mutate( expr_pleio = length(tissue),
                               expr_pleio = factor(expr_pleio, levels=1:9 ))
@@ -170,7 +171,7 @@ data<- DHS_to_gene %>%
 # need to first run this one
 #system("Rscript 1.4_run_model_permutations_expression_pleiotropy.R")
 
-pred<-readRDS("expression/complex_mixed_model_boot.RDS")
+pred<-readRDS("roadmap_expression_summaries/complex_mixed_model_boot.RDS")
 
 
 enh_expr_plot<-pred$coef %>% 

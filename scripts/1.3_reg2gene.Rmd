@@ -44,7 +44,7 @@ basic_theme<-  theme(axis.title=element_text(size=8.5),
 
 A few regions were larger than 4kb, we excluded these huge concatemers, since they cannot be unambiguously assigned to genes.
 ```{r jamm}
-jammR <- readRDS("../general/region_summary/jamm_region_info_full.rds")
+jammR <- readRDS("../roadmap_DHS_summaries/region_summary/jamm_region_info_full.rds")
 
 jammGR <- GRanges( seqnames = jammR$chromosome,
                    ranges = IRanges( start = jammR$start,
@@ -77,16 +77,16 @@ tss$tss_id<-1:length(tss)
 tss$gene_name<-tss$gene_id
 jammGR$peak_id<-jammGR$region_id
 
-saveRDS(tss, file="../distance_to_tss/gencode19.tssGR.rds")
+saveRDS(tss, file="../CRE_to_Gene/gencode19.tssGR.rds")
 ```
 
 ## TSS-enhancer association 
-Enhancers are only associated with TSS that have open promoters. This step does not need to be repeated as we save the outputs under distance_to_tss/DHS_to_gene.rds
+Enhancers are only associated with TSS that have open promoters. This step does not need to be repeated as we save the outputs under CRE_to_Gene/DHS_to_gene.rds
 
 ```{r promenh2}
 
-summarized_expression_all<-readRDS("../expression/summarized_expression_allTissues.rds")
-tss<-readRDS("../distance_to_tss/gencode19.tssGR.rds")
+summarized_expression_all<-readRDS("../roadmap_expression_summaries/summarized_expression_allTissues.rds")
+tss<-readRDS("../CRE_to_Gene/gencode19.tssGR.rds")
 
 tissue_GR<-list()
 tissues<-unique(summarized_expression_all$tissue)
@@ -104,7 +104,7 @@ DHS_to_gene<-bind_ranges(tissue_GR, .id="tissue") %>%
   mutate(gene_id = sub("(.*)\\..*", "\\1", gene_id))
 
 
-saveRDS(DHS_to_gene, "../distance_to_tss/DHS_to_gene.rds")
+saveRDS(DHS_to_gene, "../CRE_to_Gene/DHS_to_gene.rds")
 #need to remember that this annotation won't contain region_ids that were not close enough in any tissue to any gene
 
 #sanity checks
@@ -124,7 +124,7 @@ Number of samples and genes per tissue (expression); distances to nearest TSSs; 
 
 ```{r suppl2}
 
-srx_expression_info<-readRDS("../expression/srx_expression_info.rds")
+srx_expression_info<-readRDS("../roadmap_expression_summaries/srx_expression_info.rds")
 
 expr<-plot_grid(
   

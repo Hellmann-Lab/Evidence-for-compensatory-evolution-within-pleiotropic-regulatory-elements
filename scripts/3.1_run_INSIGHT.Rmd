@@ -18,10 +18,10 @@ source("helper_functions.R")
 
 ```{r sql}
 
-jamm_region_identifiers<-readRDS("../general/region_summary/jamm_region_identifiers.rds")
-jamm_DNase_binary<-readRDS("../general/region_summary/jamm_DNase_binary.rds")
-jamm_region_info_full<-readRDS("../general/region_summary/jamm_region_info_full.rds")
-jamm_peaks<-readRDS("../general/region_summary/jamm_peaks.rds")
+jamm_region_identifiers<-readRDS("../roadmap_DHS_summaries/region_summary/jamm_region_identifiers.rds")
+jamm_DNase_binary<-readRDS("../roadmap_DHS_summaries/region_summary/jamm_DNase_binary.rds")
+jamm_region_info_full<-readRDS("../roadmap_DHS_summaries/region_summary/jamm_region_info_full.rds")
+jamm_peaks<-readRDS("../roadmap_DHS_summaries/region_summary/jamm_peaks.rds")
 
 
 #gencode: download gtf from https://ftp.ebi.ac.uk/pub/databases/gencode/Gencode_human/release_19/gencode.v19.annotation.gtf.gz
@@ -46,17 +46,17 @@ for (i in 1:9){
   jamm_region_info_full %>%
     filter(total==i) %>%
     dplyr::select(chromosome,start,end) %>%
-  write.table(paste0("../general/bed/full_sp_bed/sp",i,".bed"),sep="\t",row.names = F,col.names = F,quote=F)
+  write.table(paste0("../roadmap_DHS_summaries/bed/full_sp_bed/sp",i,".bed"),sep="\t",row.names = F,col.names = F,quote=F)
 }
 
 # must be smaller than 20M bases due to INSIGHT inability to use such a large file -downsample; but run the excluded regions separately too
 
 for (i in 1:2){
-bed<-read.table(paste0("../general/bed/full_sp_bed/sp",i,".bed"),head=F)
+bed<-read.table(paste0("../roadmap_DHS_summaries/bed/full_sp_bed/sp",i,".bed"),head=F)
 tmp<-data.frame(chr=bed[,1],sta=bed[,2],end=bed[,3])
 
 ll=dim(tmp)[1]
-outfile<-paste0("../general/bed/full_sp_bed/sp",i,".downs.bed")
+outfile<-paste0("../roadmap_DHS_summaries/bed/full_sp_bed/sp",i,".downs.bed")
 if( sum(tmp$end-tmp$sta)/2e7>1){
   print(sum(tmp$end-tmp$sta)/2e7)
   n<-ll/( sum(tmp$end-tmp$sta)/2e7 )
@@ -70,7 +70,7 @@ if( sum(tmp$end-tmp$sta)/2e7>1){
   rows<-floor(ll/parts)
   vec<-ceiling(seq(from=0, to=ll, length.out = parts+1))
   for (p in 1:parts){
-    write.table(tmp[(vec[p]+1):(vec[p+1]),],sep="\t",row.names = F,col.names = F,quote=F,file=paste0("../general/bed/full_sp_bed/split/sp",i,"_part",p,".bed"))
+    write.table(tmp[(vec[p]+1):(vec[p+1]),],sep="\t",row.names = F,col.names = F,quote=F,file=paste0("../roadmap_DHS_summaries/bed/full_sp_bed/split/sp",i,"_part",p,".bed"))
   }
 } else { 
   write.table(tmp,sep="\t",row.names = F,col.names = F,quote=F,file=outfile)
@@ -93,9 +93,9 @@ Peak-wise:\\
 
 ```{r ins2}
 
-jamm_region_info_full<-readRDS("../general/region_summary/jamm_region_info_full.rds")
+jamm_region_info_full<-readRDS("../roadmap_DHS_summaries/region_summary/jamm_region_info_full.rds")
 
-DHS_annot<-readRDS("../distance_to_tss/DHS_to_gene.rds") %>%
+DHS_annot<-readRDS("../CRE_to_Gene/DHS_to_gene.rds") %>%
   distinct(region_id, .keep_all = T) %>%
   dplyr::select(-gene_id) %>%
   inner_join(jamm_region_identifiers) %>%
@@ -107,7 +107,7 @@ target_dir="../INSIGHT/per_region/"
 
 for (i in c(1:9)){
 
-  bed_file<-read.table(paste0("../general/bed/full_sp_bed/sp",i,".bed"))
+  bed_file<-read.table(paste0("../roadmap_DHS_summaries/bed/full_sp_bed/sp",i,".bed"))
   colnames(bed_file)<-c("chromosome","start","end")
   
   for (t in c("enh","prom")){
@@ -129,8 +129,8 @@ system("sbatch /data/share/htp/pleiotropy/paper_data/INSIGHT/scripts/commands_fo
 ```{r ins2}
 tissues<-c("adrenal_gland", "brain", "heart", "kidney", "large_intestine", "lung", "muscle", "stomach", "thymus")
 
-jamm_region_info_full<-readRDS("../general/region_summary/jamm_region_info_full.rds")
-DHS_annot<-readRDS("../distance_to_tss/DHS_to_gene.rds") %>%  
+jamm_region_info_full<-readRDS("../roadmap_DHS_summaries/region_summary/jamm_region_info_full.rds")
+DHS_annot<-readRDS("../CRE_to_Gene/DHS_to_gene.rds") %>%  
   dplyr::select(-gene_id) %>%
   inner_join(jamm_region_identifiers) %>%
   mutate(chromosome=paste0("chr",chromosome)) %>%
@@ -139,7 +139,7 @@ DHS_annot<-readRDS("../distance_to_tss/DHS_to_gene.rds") %>%
 target_dir="../INSIGHT/all_per_tissue/"    
 for (i in c(1:9)){
   
-  bed_file<-read.table(paste0("../general/bed/full_sp_bed/sp",i,".bed"))
+  bed_file<-read.table(paste0("../roadmap_DHS_summaries/bed/full_sp_bed/sp",i,".bed"))
   colnames(bed_file)<-c("chromosome","start","end")
   
   for (t in tissues){
@@ -170,7 +170,7 @@ jamm_peaks_selected %>% filter(start.peak <start.region | end.peak > end.region)
 
 
 #directly filter and do anti-join per bed file (i.e. tissue and specificity)
-target_dir="../general/bed/PeaksAntiPeaks"
+target_dir="../roadmap_DHS_summaries/bed/PeaksAntiPeaks"
 
 for (t in c("brain","thymus")){
   for (i in 2:9){
@@ -208,7 +208,7 @@ for (i in c(2:9)){
   for (t in c("brain","thymus")){
     for (p in c("peaks","anti")){
   
-  bed_file<-read.table(paste0("../general/bed/PeaksAntiPeaks/sp",i,"_",t,"_",p,".bed"))
+  bed_file<-read.table(paste0("../roadmap_DHS_summaries/bed/PeaksAntiPeaks/sp",i,"_",t,"_",p,".bed"))
   colnames(bed_file)<-c("seqnames","start","end")
   
   dir.create(paste0(target_dir,t,"_",p), recursive=T, showWarnings = F)
@@ -233,7 +233,7 @@ NPC DA vs non-DA peaks. Steps:\\
 
 ```{r stringent}
 
-stringent_set_INSIGHT<-readRDS("../DA_ipsc_npc/RDS/jammPeaks_vs_ATACPeaks_NPC_stringent.rds") %>%
+stringent_set_INSIGHT<-readRDS("../ATACseq/RDS/jammPeaks_vs_ATACPeaks_NPC_stringent.rds") %>%
   filter(openness!="Not open") %>%
   inner_join(jamm_region_identifiers %>% mutate(region_id = as.factor(region_id))) %>%
   mutate(chromosome=paste0("chr",chromosome)) %>%
@@ -245,7 +245,7 @@ target_dir="../INSIGHT/per_NPC_DA_stringent/"
 
 for (i in c(1:9)){
 
-  bed_file<-read.table(paste0("../general/bed/full_sp_bed/sp",i,".bed"))
+  bed_file<-read.table(paste0("../roadmap_DHS_summaries/bed/full_sp_bed/sp",i,".bed"))
   colnames(bed_file)<-c("chromosome","start","end")
   
   for (t in c("DA","nonDA")){
@@ -267,8 +267,8 @@ system("sbatch /data/share/htp/pleiotropy/paper_data/INSIGHT/scripts/commands_fo
 
 ```{r subsetIns}
 
-jamm_region_info_full<-readRDS("../general/region_summary/jamm_region_info_full.rds")
-DHS_annot<-readRDS("../distance_to_tss/DHS_to_gene.rds") %>%  
+jamm_region_info_full<-readRDS("../roadmap_DHS_summaries/region_summary/jamm_region_info_full.rds")
+DHS_annot<-readRDS("../CRE_to_Gene/DHS_to_gene.rds") %>%  
   distinct(region_id, .keep_all = T) %>%
   dplyr::select(-gene_id,-tissue) %>%
   inner_join(jamm_region_identifiers) %>%
@@ -280,7 +280,7 @@ target_dir="../INSIGHT/CGI/"
 
 for (i in c(1:9)){
   
-  bed_file<-read.table(paste0("../general/bed/full_sp_bed/sp",i,".bed"))
+  bed_file<-read.table(paste0("../roadmap_DHS_summaries/bed/full_sp_bed/sp",i,".bed"))
   colnames(bed_file)<-c("chromosome","start","end")
   for (c in c("CGI", "noCGI")){
 
@@ -300,7 +300,7 @@ system("sbatch /data/share/htp/pleiotropy/paper_data/INSIGHT/scripts/commands_fo
 ```{r maxPeaksInsight}
 
 # generate max-tissue peaks vs not bed files (code for generation of this in pleiotropy1.Rmd) ####
-cov<-read.table("../general/bed/peak_coverage.bed")
+cov<-read.table("../roadmap_DHS_summaries/bed/peak_coverage.bed")
 colnames(cov)<-c("chr","start","end","region_id","total","position","coverage")
   
 cov_ranges2<-cov %>% as_tibble() %>%
@@ -339,9 +339,9 @@ for (i in 1:9){
     n<-floor(n/1000)*1000
     print(n)
     #downsample
-    write.table(tmp[sample.int(n=dim(tmp)[1], size=n), ],sep="\t",row.names = F,col.names = F,quote=F,file=paste0("../general/bed/maxTissuePeak_bed/sp",i,".downs.bed"))
+    write.table(tmp[sample.int(n=dim(tmp)[1], size=n), ],sep="\t",row.names = F,col.names = F,quote=F,file=paste0("../roadmap_DHS_summaries/bed/maxTissuePeak_bed/sp",i,".downs.bed"))
   } else {
-    write.table(tmp, file=paste0("../general/bed/maxTissuePeak_bed/sp",i,".bed"),sep="\t",row.names = F,col.names = F,quote=F)
+    write.table(tmp, file=paste0("../roadmap_DHS_summaries/bed/maxTissuePeak_bed/sp",i,".bed"),sep="\t",row.names = F,col.names = F,quote=F)
   }}
 
 #need to run this manually on the website
@@ -355,7 +355,7 @@ target_dir="../INSIGHT/maxTissuePeak/"
 
 for (i in c("1.downs", "2.downs",3:9)){
   
-  bed_file<-read.table(paste0("../general/bed/maxTissuePeak_bed/sp",i,".bed"))
+  bed_file<-read.table(paste0("../roadmap_DHS_summaries/bed/maxTissuePeak_bed/sp",i,".bed"))
   colnames(bed_file)<-c("seqnames","start","end")
   #colnames(bed_file)<-c("seqnames","start.peak.coord","end.peak.coord")
   #exclude overlaps with CDS

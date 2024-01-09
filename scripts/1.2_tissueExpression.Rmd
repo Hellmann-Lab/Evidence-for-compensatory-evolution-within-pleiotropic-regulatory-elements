@@ -43,7 +43,7 @@ srx_expression_info<-data.frame(srx_id=colnames(all_gene_expression)) %>%
   mutate(tissue=gsub("adrenal gland", "adrenal_gland",tissue),
          tissue=gsub("large intestine", "large_intestine",tissue)) %>%
   filter(tissue %in% tissues)
-saveRDS(srx_expression_info, "../expression/srx_expression_info.rds")
+saveRDS(srx_expression_info, "../roadmap_expression_summaries/srx_expression_info.rds")
 
 #198 genes appear more than once -- sum up the expression
 #all_gene_expression %>% group_by(geneid) %>% summarise(n=length(geneid)) %>% arrange %>% View
@@ -60,7 +60,7 @@ table(colnames(count_table) == srx_expression_info$srx_id)
 
 # kick out systematic zeros
 count_table <- count_table[rowSums(count_table)>0,]
-saveRDS(count_table, "../expression/expression_count_table.rds")
+saveRDS(count_table, "../roadmap_expression_summaries/expression_count_table.rds")
 
 ```
 
@@ -95,7 +95,7 @@ summarized_expression_df<-plyr::ldply(summarized_expression_list, .id="tissue")
 
 
 #also add the brain sample that was uploaded later onto ENCODE repositories
-brain<- read.table("../expression/human_fetalbrain.allgenes.rpkm.csv", head=T, sep="\t") %>%
+brain<- read.table("../roadmap_expression_summaries/human_fetalbrain.allgenes.rpkm.csv", head=T, sep="\t") %>%
       dplyr::filter( E082 > 1 ) %>%
       dplyr::transmute( tissue = "brain",
                  gene_id = gene_id,
@@ -111,14 +111,14 @@ summarized_expression_all <- summarized_expression_df %>%
                dplyr::rename( gene_id = ensembl_gene_id) %>%
                dplyr::bind_rows(brain %>% dplyr::select( tissue, gene_id, log2_median_expression, mean_expression, log2_mean_expression, CV_expression))
 
-saveRDS(summarized_expression_all, "../expression/summarized_expression_allTissues.rds")
+saveRDS(summarized_expression_all, "../roadmap_expression_summaries/summarized_expression_allTissues.rds")
 
 
 ```
 
 
 
-```{r general stats}
+```{r roadmap_DHS_summaries stats}
 
 
 plot_grid(

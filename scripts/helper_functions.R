@@ -360,17 +360,6 @@ analysePhastCons <- function( bigWigFile, gr, probcut=0.9){
 
 }
 
-# analysePhyloP <- function( bigWigFile, gr){
-#   phyloP  <- rtracklayer::import(bigWigFile, 
-#                                  which= gr,
-#                                  as="NumericList")
-#   sumP<- sapply(phyloP, function(x){ 
-#     c(length(x), max(x), sum(x>=1.3) )
-#   }) %>% t() %>% data.frame()
-#   
-#   names(sumP)<- c("bp","maxPhyloP","consPhylo")
-#   gr %>% as_tibble() %>% bind_cols(sumP)
-# }
 
 analysePhyloP <- function( bigWigFile, gr, consCutoff = 1){
   phyloP  <- rtracklayer::import(bigWigFile, 

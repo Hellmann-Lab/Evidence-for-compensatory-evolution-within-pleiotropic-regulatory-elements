@@ -20,42 +20,42 @@ library(BSgenome.Hsapiens.NCBI.GRCh38)
 # count reads falling in these
 
 
-setwd("/data/share/htp/pleiotropy/paper_data/")
-source("DA_ipsc_npc/scripts/functions.R")
-source("DA_ipsc_npc/scripts/helper_functions.R")
+#setwd("/data/share/htp/pleiotropy/paper_data/")
+source("ATACseq/scripts/functions.R")
+source("ATACseq/scripts/helper_functions.R")
 workdir<-"/data/share/htp/pleiotropy/paper_data/"
 
 
-jamm_region_identifiers<-readRDS("general/region_summary/jamm_region_info_full.rds") %>%
+jamm_region_identifiers<-readRDS("roadmap_DHS_summaries/region_summary/jamm_region_info_full.rds") %>%
   transmute(seqnames, start,end, region_id) %>%
   dplyr::filter(start < end & end - start<=5000)
 
 
 # RECIPROCAL LIFTOVER -----------------------------------------------------
 
-jamm_hg38_noExt<-translate_jamm(chain_file = "liftOvers/hg19ToHg38.over.chain",
+jamm_hg38_noExt<-translate_jamm(chain_file = "macFas6_liftOver_chains/hg19ToHg38.over.chain",
                                 coordinate_file = as_granges(jamm_region_identifiers), 
                                 extend = 20,
-                                reverse_chain_file = "liftOvers/hg38ToHg19.over.chain")
+                                reverse_chain_file = "macFas6_liftOver_chains/hg38ToHg19.over.chain")
 
-jamm_macfas6_noExt<-translate_jamm(chain_file = "liftOvers/hg38ToMacFas6.over.chain", 
+jamm_macfas6_noExt<-translate_jamm(chain_file = "macFas6_liftOver_chains/hg38ToMacFas6.over.chain", 
                                    coordinate_file = as_granges(jamm_hg38_noExt), 
                                    extend = 20,
-                                   reverse_chain_file = "liftOvers/macFas6ToHg38.over.chain")
+                                   reverse_chain_file = "macFas6_liftOver_chains/macFas6ToHg38.over.chain")
 
 
 #save both as bed files
 write.table(jamm_hg38_noExt %>% 
               transmute(seqnames = gsub("chr","",seqnames), start, end, region_id),
-            "DA_ipsc_npc/bed/hg38_DHS.bed", col.names = F, row.names = F, quote = F, sep="\t")
+            "ATACseq/bed/hg38_DHS.bed", col.names = F, row.names = F, quote = F, sep="\t")
 
 write.table(jamm_macfas6_noExt %>% 
               transmute(seqnames = gsub("chr","",seqnames), start, end, region_id),
-            "DA_ipsc_npc/bed/macFas6_DHS.bed", col.names = F, row.names = F, quote = F, sep="\t")
+            "ATACseq/bed/macFas6_DHS.bed", col.names = F, row.names = F, quote = F, sep="\t")
 
 
 # run the counting in these regions
-system("DA_ipsc_npc/scripts/count_table.sh")
+system("ATACseq/scripts/count_table.sh")
 
 
 
@@ -76,7 +76,7 @@ coords_mac_gr<-jamm_macfas6_noExt %>%
 
 writeFasta4cbust(gr = coords_mac_gr,
                  genome = BSgenome.Mfascicularis.NCBI.6.0,
-                 fasta.file = paste0(workdir,"DA_ipsc_npc/cbust/fastas/macFas6/macFas6"),
+                 fasta.file = paste0(workdir,"ATACseq/cbust/fastas/macFas6/macFas6"),
                  padding = 500, 
                  max.seq = 5000,
                  id.col = "region_id")
@@ -84,7 +84,7 @@ writeFasta4cbust(gr = coords_mac_gr,
 
 writeFasta4cbust(gr = coords_mac_gr,
                  genome = BSgenome.Mfascicularis.NCBI.6.0,
-                 fasta.file = paste0(workdir,"DA_ipsc_npc/cbust/fastas/macFas6NoExt/macFas6NoExt"),
+                 fasta.file = paste0(workdir,"ATACseq/cbust/fastas/macFas6NoExt/macFas6NoExt"),
                  padding = 0, 
                  max.seq = 5000,
                  id.col = "region_id")
@@ -99,7 +99,7 @@ coords_hum_gr<-jamm_hg38_noExt %>%
 
 writeFasta4cbust(gr = coords_hum_gr,
                  genome = BSgenome.Hsapiens.NCBI.GRCh38,
-                 fasta.file = paste0(workdir,"DA_ipsc_npc/cbust/fastas/hg38/hg38"),
+                 fasta.file = paste0(workdir,"ATACseq/cbust/fastas/hg38/hg38"),
                  padding = 500, 
                  max.seq = 5000,
                  id.col = "region_id")
@@ -107,7 +107,7 @@ writeFasta4cbust(gr = coords_hum_gr,
 
 writeFasta4cbust(gr = coords_hum_gr,
                  genome = BSgenome.Hsapiens.NCBI.GRCh38,
-                 fasta.file = paste0(workdir,"DA_ipsc_npc/cbust/fastas/hg38NoExt/hg38NoExt"),
+                 fasta.file = paste0(workdir,"ATACseq/cbust/fastas/hg38NoExt/hg38NoExt"),
                  padding = 0, 
                  max.seq = 5000,
                  id.col = "region_id")
@@ -173,7 +173,7 @@ jamm_inATAC<-inner_join(as_tibble(coords_hum_gr),
   left_join(seq_mac %>% ungroup() %>% mutate(region_id = as.factor(region_id))) %>%
   left_join(seq_hum %>% ungroup() %>% mutate(region_id = as.factor(region_id)))
 
-saveRDS(jamm_inATAC, "DA_ipsc_npc/RDS/jamm_inATAC.rds")
+saveRDS(jamm_inATAC, "ATACseq/RDS/jamm_inATAC.rds")
 
 
 
@@ -210,7 +210,7 @@ jaspar_ic_df <- jaspar_ic %>%
 
 # expressed TFs in iPSC-NPC dataset ####
 
-cnts<-readRDS("expression_conservation/RDS/cnt_clean.rds")
+cnts<-readRDS("RNAseq/RDS/cnt_clean.rds")
 
 gene_to_symbol <- gtf %>% S4Vectors::mcols() %>% data.frame() %>% 
   dplyr::select(gene_id, gene_name) %>% distinct() %>% 
@@ -238,7 +238,7 @@ table(jaspar_ic_df_diff$nTFs==jaspar_ic_df_diff$nTFs_expressed)
 
 # filter PWMs
 PFMatrixList_expr<-PFMatrixList[names(PFMatrixList) %in% unique(jaspar_ic_df_diff$motif_ID)]
-savePFM(PFMatrixList_obj = PFMatrixList_expr, out.file = "DA_ipsc_npc/cbust/PWMs/exprIpscNpc")
+savePFM(PFMatrixList_obj = PFMatrixList_expr, out.file = "ATACseq/cbust/PWMs/exprIpscNpc")
 
 # also save the TF family and class
 class<-bind_rows(lapply(PFMatrixList, function(x){data.frame(class=x@matrixClass)}), .id="motif_ID")
@@ -248,10 +248,10 @@ jaspar_ic_df_diff %>%
   filter(motif_ID %in% names(PFMatrixList)) %>%
   left_join(class) %>%
   dplyr::select(-nTFs, -nTFs_expressed) %>%
-  saveRDS("DA_ipsc_npc/cbust/expressedTFs.rds")
+  saveRDS("ATACseq/cbust/expressedTFs.rds")
 
 family<-bind_rows(lapply(PFMatrixList, function(x){data.frame(family=x@tags$family)}), .id="motif_ID")
-saveRDS(family, "DA_ipsc_npc/cbust/TF_family.rds")
+saveRDS(family, "ATACseq/cbust/TF_family.rds")
 
 
 
@@ -261,7 +261,7 @@ saveRDS(family, "DA_ipsc_npc/cbust/TF_family.rds")
 
 # expressed in NPCs ####
 
-exprdds <- readRDS("expression_conservation/RDS/dds_clean.rds")
+exprdds <- readRDS("RNAseq/RDS/dds_clean.rds")
 tmp <- colData(exprdds)
 tmp <- tmp[tmp$Differentiation == "NPC",]
 countData = DESeq2::counts(exprdds)[,rownames(tmp)]
@@ -271,7 +271,7 @@ expressed_genes <- freq_umicounts > 0.25
 table(expressed_genes)
 umi_counts_filt <- countData[expressed_genes,]
 
-exprTFs_ipsc_npc<-readRDS("DA_ipsc_npc/cbust/expressedTFs.rds")
+exprTFs_ipsc_npc<-readRDS("ATACseq/cbust/expressedTFs.rds")
 
 exprTFs_ipsc_npc[!exprTFs_ipsc_npc$gene_id %in% rownames(umi_counts_filt),]
 # nothing to drop - same set as when taking both ipscs and npcs
@@ -282,7 +282,7 @@ exprTFs_ipsc_npc[!exprTFs_ipsc_npc$gene_id %in% rownames(umi_counts_filt),]
 
 # expressed TFs in human tissues ####
 
-summarized_expression_all<-readRDS("expression/summarized_expression_allTissues.rds")
+summarized_expression_all<-readRDS("roadmap_expression_summaries/summarized_expression_allTissues.rds")
 
 gene_to_symbol_tissues <- gtf %>% S4Vectors::mcols() %>% data.frame() %>% 
   dplyr::select(gene_id, gene_name) %>% distinct() %>% 
@@ -310,7 +310,7 @@ table(jaspar_ic_df_tissues$nTFs==jaspar_ic_df_tissues$nTFs_expressed)
 
 # filter PWMs
 PFMatrixList_Tissueexpr<-PFMatrixList[names(PFMatrixList) %in% unique(jaspar_ic_df_tissues$motif_ID)]
-savePFM(PFMatrixList_obj = PFMatrixList_Tissueexpr, out.file = "DA_ipsc_npc/cbust/PWMs/exprTissues")
+savePFM(PFMatrixList_obj = PFMatrixList_Tissueexpr, out.file = "ATACseq/cbust/PWMs/exprTissues")
 
 # also save the TF family and class
 class<-bind_rows(lapply(PFMatrixList, function(x){data.frame(class=x@matrixClass)}), .id="motif_ID")
@@ -320,5 +320,5 @@ jaspar_ic_df_tissues %>%
   filter(motif_ID %in% names(PFMatrixList)) %>%
   left_join(class) %>%
   dplyr::select(-nTFs, -nTFs_expressed) %>% 
-  saveRDS("DA_ipsc_npc/cbust/expressedTFs_inTissues.rds")
+  saveRDS("ATACseq/cbust/expressedTFs_inTissues.rds")
 

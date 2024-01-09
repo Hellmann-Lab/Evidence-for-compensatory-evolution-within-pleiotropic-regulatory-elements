@@ -13,17 +13,17 @@ specificityColors <- c( "#A3753B", "#CC9B57", "#E7CF97", "#F8EDD0", "#F7F7F7", "
 names(specificityColors) <-  c(1:9)
 
 
-setwd("/data/share/htp/pleiotropy/paper_data/")
-source("DA_ipsc_npc/scripts/TFBS_analysis_functions_ATAC.R")
+#setwd("/data/share/htp/pleiotropy/paper_data/")
+source("ATACseq/scripts/TFBS_analysis_functions_ATAC.R")
 
 
 # PUT ALL INFO TOGETHER ####
 # chromosomal positions
-jamm_hg19<-readRDS("general/region_summary/jamm_region_info_full.rds") %>%
+jamm_hg19<-readRDS("roadmap_DHS_summaries/region_summary/jamm_region_info_full.rds") %>%
   mutate(width=end-start)
 
 # enhancer / promoter assignment
-DHS_to_gene<-readRDS("distance_to_tss/DHS_to_gene.rds") %>%
+DHS_to_gene<-readRDS("CRE_to_Gene/DHS_to_gene.rds") %>%
   distinct(region_id, assignment, .keep_all = T) %>%
   mutate(assignment=gsub("enh","enhancer",assignment),
          assignment=gsub("prom","promoter",assignment))
@@ -32,7 +32,7 @@ DHS_to_gene<-readRDS("distance_to_tss/DHS_to_gene.rds") %>%
 
 # CGI EVO -----------------------------------------------------------------
 
-jamm_inATAC<-readRDS("DA_ipsc_npc/RDS/jamm_inATAC.rds") %>%
+jamm_inATAC<-readRDS("ATACseq/RDS/jamm_inATAC.rds") %>%
   filter(similar_width=="yes", Ns_hg38==0, Ns_macFas6==0) %>%
   dplyr::mutate(GC_distance = abs(GC_content.mac - GC_content.hg),
                 CpG_obs_exp_distance = abs(CpG_obs_exp.mac - CpG_obs_exp.hg)) 
@@ -45,18 +45,18 @@ phyloP_DHS<-readRDS("RDS/phyloP_DHS.rds") %>% mutate(total=as.factor(as.characte
 
 
 # TFBS CONSERVATION -------------------------------------------------------
-dd_10perc_exprTissues<-data.table::fread("DA_ipsc_npc/cbust/top10perc_motifs_exprTissues_dt.csv") %>%
+dd_10perc_exprTissues<-data.table::fread("ATACseq/cbust/top10perc_motifs_exprTissues_dt.csv") %>%
   calculate_per_region_TF_stats() %>%
   mutate(region_id = as.factor(region_id)) 
 
 
-dd_10perc_exprNPC<-data.table::fread("DA_ipsc_npc/cbust/top10perc_motifs_exprNPC_dt.csv") %>% 
+dd_10perc_exprNPC<-data.table::fread("ATACseq/cbust/top10perc_motifs_exprNPC_dt.csv") %>% 
   calculate_per_region_TF_stats() %>% 
   mutate(region_id = as.factor(region_id)) 
 
 
 # still should remove ones with bad aln quality
-TF_dists<-readRDS("DA_ipsc_npc/cbust/RDS/TFBS_position/summarized_TFBS_distances_exprTissues_10perc.rds") %>%
+TF_dists<-readRDS("ATACseq/cbust/RDS/TFBS_position/summarized_TFBS_distances_exprTissues_10perc.rds") %>%
   mutate(indel_perc=indel_bp/aln_length,
          mm_perc=mismatches/aln_length)
 
@@ -68,7 +68,7 @@ quantile(TF_dist$nindel, probs=c(0.05,0.5,0.95))
 
 # DEG, DA, OPENNESS -----------------------------------------------------------------
 
-exprdds <- readRDS("expression_conservation/RDS/dds_clean.rds")
+exprdds <- readRDS("RNAseq/RDS/dds_clean.rds")
 DE<-lapply( c("NPC"), function(i){
   tmp <- colData(exprdds)
   tmp <- tmp[tmp$Differentiation == i,]
@@ -84,7 +84,7 @@ DE<-lapply( c("NPC"), function(i){
 
 
 
-atacDDS <- readRDS("DA_ipsc_npc/RDS/atacDDS.rds")
+atacDDS <- readRDS("ATACseq/RDS/atacDDS.rds")
 DA<-lapply( c("NPC"), function(i){
   tmp <- colData(atacDDS)
   tmp <- tmp[tmp$cell_type == i,]
@@ -103,8 +103,8 @@ DA<-lapply( c("NPC"), function(i){
 
 
 
-jamm_forATAC_NPC_all<-readRDS("DA_ipsc_npc/RDS/jammPeaks_vs_ATACPeaks_NPC_all.rds")
-stringent_set_NPC<-readRDS("DA_ipsc_npc/RDS/jammPeaks_vs_ATACPeaks_NPC_stringent.rds") 
+jamm_forATAC_NPC_all<-readRDS("ATACseq/RDS/jammPeaks_vs_ATACPeaks_NPC_all.rds")
+stringent_set_NPC<-readRDS("ATACseq/RDS/jammPeaks_vs_ATACPeaks_NPC_stringent.rds") 
 
 
 
@@ -150,7 +150,7 @@ seq_vs_TFBS<-jamm_hg19 %>%
                dplyr::transmute(region_id = as.factor(as.character(region_id)),
                                 openness_stringent = openness)) 
 
-saveRDS(seq_vs_TFBS, "DA_ipsc_npc/cbust/RDS/seq_vs_TFBS_10perc.rds")
+saveRDS(seq_vs_TFBS, "ATACseq/cbust/RDS/seq_vs_TFBS_10perc.rds")
 
 
 
@@ -160,7 +160,7 @@ saveRDS(seq_vs_TFBS, "DA_ipsc_npc/cbust/RDS/seq_vs_TFBS_10perc.rds")
 # Spider / radar plot -------------------------------------------------------------
 
 library(fmsb)
-seq_vs_TFBS<-readRDS("DA_ipsc_npc/cbust/RDS/seq_vs_TFBS_10perc.rds")
+seq_vs_TFBS<-readRDS("ATACseq/cbust/RDS/seq_vs_TFBS_10perc.rds")
 
 
 chart<-seq_vs_TFBS %>%
@@ -169,7 +169,7 @@ chart<-seq_vs_TFBS %>%
   dplyr::summarise(mean = mean(abs(value), na.rm=T)) %>%
   pivot_wider(id_cols = total, names_from = "name", values_from = "mean") %>%
   # Add downstream gene expression
-  left_join(readRDS("expression_conservation/RDS/DE_DA_table.rds") %>%
+  left_join(readRDS("RNAseq/RDS/DE_DA_table.rds") %>%
               filter(celltype=="NPC", !is.na(region_id)) %>%
               group_by(total) %>%
               dplyr::summarise(LFC.DE = mean(abs(log2FoldChange)))) %>%

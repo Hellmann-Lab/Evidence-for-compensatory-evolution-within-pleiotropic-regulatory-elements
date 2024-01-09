@@ -10,7 +10,8 @@ Most important scripts (under scripts):
 
 FIGURE 1
 
-1.1_basics.Rmd : some preprocessing of DHS tables and peak analyses (suppl fig1)
+1.0_DHS_peakcalling : scripts to call peaks per tissue and then merge the overlapping coordinates to generate CRE coordinates
+1.1_basics.Rmd : some preprocessing of DHS tables and peak analyses; saving most important summary tables on DHS-peaks (suppl fig1)
 1.2_tissueExpression.Rmd : rpkm expression value wrangling per tissue (suppl fig2)
 1.3_reg2gene.Rmd: region_id to gene association; LM predicting expression (figure 2)
 1.4_run_model_permutations_expression_pleiotropy.R : control permutations for expression prediction using CRE pleiotropic degree across human tissues
@@ -19,22 +20,23 @@ FIGURE 1
 
 FIGURE 3
 
+2.0_run_liftoff_mf6.sh and 2.0_final_filter_liftoffgtf.R : generate a gtf file for macaque from the human gtf using liftOff.
 2.1_DE_analysis.R : gene expression preprocessing
 2.2_RLO_prepCbust.R : identification of DHS coordinates in macaque; sequence, expressed TF PWM preparation as inputs for cluster buster
-DA_ipsc_npc/scripts/count_table.sh : count ATAC seq reads in the CREs
+ATACseq/scripts/count_table.sh : count ATAC seq reads in the CREs
 2.3_OL_filtering_DA.R : more stringent 1-to-1, 0-to-0, 1-to-0 and 0-to-1 peak filtering between DHS vs ATAC for both species, and human vs macaque
 2.4_Species_openness.Rnd : openness DA vs expression DE
 
 
-FIGURE 4
+FIGURES 4+5
 
 3.1_run_INSIGHT.Rmd : setting up all sequence conservation scripts 
 3.2_plot_INSIGHT.Rmd : analysis + plots of the sequence conservation outcomes
 
 
-FIGURE 2+4
+FIGURES 2+6
 
-in the DA_ipsc_npc/scripts folder:
+in the ATACseq/scripts folder:
 
 run_cbust_gorilla3.sh : running cbust
 summarizeTFsPerRegion.R : summarize TFs per cluster
@@ -43,14 +45,14 @@ splitCbust.R : splitting cbust outputs per sequence for human and macaque orthol
 runTFBSPosition.sh : runs calculatePositionCons.R per region (slurm)
 summarizeTFBSDistances.R :  as the name says.. (+ run in slurm)
 
-in the scripts folder:
+back in the scripts folder:
 
 4.1_TFBS_diversity.Rmd : put the new figure 2 together on TFs
 4.2_combineAll.Rmd : make one big summary table; generate the combined scaled seq-cons + TFBS repertoire cons + TFBS position cons plot and the hexagon spider plot.
 4.3_TFBS_repertoire.Rmd :  put figure 5 together
 
 
-FIGURE 5
+FIGURE 7
 
 5.1_figureExample.R : example gene promoter investigation and visualization
 
