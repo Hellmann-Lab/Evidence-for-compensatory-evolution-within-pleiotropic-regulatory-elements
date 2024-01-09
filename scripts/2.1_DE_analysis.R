@@ -7,7 +7,7 @@ library(tidyverse)
 
 #setwd("/data/share/htp/pleiotropy/paper_data/")
 source("scripts/helper_functions.R")
-
+# to see the zUMIs run, check RNAseq folder
 
 # COLLECT THE DATA --------------------------------------------------------
 
