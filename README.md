@@ -1,7 +1,7 @@
 
 <!-- README.md is generated from README.Rmd. Please edit that file -->
 
-# The effects of pleiotropy on regulatory evolution
+# Evidence for compensatory evolution within pleiotropic regulatory elements
 
 [![DOI](https://zenodo.org/badge/332821121.svg)](https://zenodo.org/badge/latestdoi/332821121)
 wrong DOI  
