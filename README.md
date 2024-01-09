@@ -3,8 +3,8 @@
 
 # Evidence for compensatory evolution within pleiotropic regulatory elements
 
-[![DOI](https://zenodo.org/badge/332821121.svg)](https://zenodo.org/badge/latestdoi/332821121)
-wrong DOI  
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.10471368.svg)](https://doi.org/10.5281/zenodo.10471368)
+
 This repository contains the code to reproduce the analysis for the
 manuscript
 
