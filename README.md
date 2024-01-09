@@ -1,7 +1,7 @@
 
 <!-- README.md is generated from README.Rmd. Please edit that file -->
 
-# The effect of pleiotropy on regulatory element evolution
+# The effects of pleiotropy on regulatory evolution
 
 [![DOI](https://zenodo.org/badge/332821121.svg)](https://zenodo.org/badge/latestdoi/332821121)
 wrong DOI  
@@ -24,7 +24,7 @@ ArrayExpress:
 | E-MTAB-13494 | RNA-seq data from human and cynomolgus macaque  |
 | E-MTAB-13373 | ATAC-seq data from human and cynomolgus macaque |
 
-#### 1. Re-analyzing the DNase-seq and RNA-seq data from Roadmap Epigenomics Project
+### 1. Re-analyzing the DNase-seq and RNA-seq data from Roadmap Epigenomics Project
 
 As a part of the study, we use published data to quantify the
 **Pleiotropic Degree (PD)** for nearly 0.5 million CREs accessible in at
@@ -44,7 +44,7 @@ analysis scripts for this part, underlying **Figure 1** and
 permutation](scripts/1.4_run_model_permutations_expression_pleiotropy.R)  
 [Generate Figure 1](scripts/1.5_figure1.R)  
 
-#### 2. Cross-species accessibility and expression analyses
+### 2. Cross-species accessibility and expression analyses
 
 In this study, we generate data on human and cynomolgous macaque gene
 expression and accessibility. To have comparable annotation between
@@ -62,7 +62,7 @@ different PDs (**Figure 3, Supplemental Figure S3**).
 [Identify orthologous peaks](scripts/2.3_OL_filtering_DA.R)  
 [Do the integrated analyses](scripts/2.4_Species_openness.Rmd)  
 
-#### 3. Sequence conservation
+### 3. Sequence conservation
 
 We use [INSIGHT](https://compgen.cshl.edu/INSIGHT/) to quantify the
 selection acting on the CREs between human MRCA vs outgroup MRCA and
@@ -76,7 +76,7 @@ to investigate CRE conservation across 10 primate species (**Figures 4,
 [Run sequence conservation methods](scripts/3.1_run_INSIGHT.Rmd)  
 [Summarize sequence conservation](scripts/3.2_plot_INSIGHT.Rmd)  
 
-#### 4. Transcription factor binding site analyses
+### 4. Transcription factor binding site analyses
 
 We quantified TFBS repertoire and it’s conservation between human and
 cynomolgus macaque across \>90% of all CREs in this study. First,
@@ -96,7 +96,7 @@ analyses](scripts/2.2_RLO_prepCbust.R)
 [Combine different conservation measures](scripts/4.2_combineAll.R)  
 [Generate main figure](scripts/4.3_TFBS_repertoire.Rmd)  
 
-#### 5. Example promoter analysis
+### 5. Example promoter analysis
 
 Finally, we visualized the case for a pleiotropic ATAXIN-3 gene promoter
 as a representative example for low sequence and TFBS position, but high
@@ -104,3 +104,6 @@ functional conservation in terms of TFBS repertoire, CRE accesibility
 and downstream gene expression (**Figure 7**).
 
 [Generate main figure](scripts/5.1_figureExample.R)  
+
+Throughout the workflow, we are using job scheduling system
+[slurm](https://github.com/mattthias/slurm) (v0.4.3).
