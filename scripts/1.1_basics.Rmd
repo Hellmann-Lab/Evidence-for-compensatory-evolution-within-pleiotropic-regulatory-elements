@@ -60,12 +60,15 @@ saveRDS(jamm_region_identifiers, "../roadmap_DHS_summaries/region_summary/jamm_r
 jamm_DNase_binary<-dbGetQuery(con, "SELECT * FROM jamm_DNase_binary")
 saveRDS(jamm_DNase_binary, "../roadmap_DHS_summaries/region_summary/jamm_DNase_binary.rds")
 
+# remove potentially ambiguously assigned CREs based on DE validation after peak calling and merging
+CREs_remove<-readRDS("../DA_JAMM/to_filter_out.rds")
 
 
 jamm_region_info_full<-left_join(jamm_region_identifiers, jamm_alignment_region_info, by=c("region_id", "chromosome"="sequence_chromosome", "start"="sequence_start", "end"="sequence_end")) %>%
   left_join(jamm_DNase_binary %>% dplyr::select(-row_names)) %>%
   mutate(chromosome=paste0("chr",chromosome)) %>% 
   dplyr::filter(start < end & end - start<=5000) %>%
+  dplyr::filter(!region_id %in% CREs_remove$region_id) %>% 
   dplyr::mutate(CGI=ifelse(GC_content>=0.5 & CpG_obs_exp>=0.6, "CGI", "noCGI"))
 
 write.table(jamm_region_info_full[,1:3], "../roadmap_DHS_summaries/bed/all_DHS.bed", col.names = F, row.names = F, quote = F, sep = "\t")
@@ -77,10 +80,10 @@ saveRDS(jamm_region_info_full, "../roadmap_DHS_summaries/region_summary/jamm_reg
 dnase_jamm_long<-dbGetQuery(con, "SELECT * FROM jamm_DNase_binary") %>% 
   dplyr::select(-row_names) %>%
   gather(tissue,present,-region_id, -total) %>%
-  filter(present==1) %>%
-  mutate(PD_tissue=paste0(total,"_",tissue))
+  filter(present==1, region_id %in% jamm_region_info_full$region_id) %>%
+  mutate(PD_tissue=paste0(total,"_",tissue)) 
 
-saveRDS(dnase_jamm_long, "roadmap_DHS_summaries/region_summary/jamm_per_tissue.rds")
+saveRDS(dnase_jamm_long, "../roadmap_DHS_summaries/region_summary/jamm_per_tissue.rds")
 
 ```
 
@@ -96,7 +99,7 @@ saveRDS(jamm_peaks, "../roadmap_DHS_summaries/region_summary/jamm_peaks.rds")
 write.table(jamm_peaks[,c(1:3,9,10)], "../roadmap_DHS_summaries/bed/all_peaks_ids.bed", col.names = F, row.names = F, quote = F, sep = "\t")
 write.table(jamm_region_info_full[,c(1:4,25)], "../roadmap_DHS_summaries/bed/all_DHS_ids.bed", col.names = F, row.names = F, quote = F, sep = "\t")
 
-system("sbatch --wrap='bedtools coverage -d -a ../roadmap_DHS_summaries/bed/all_DHS_ids.bed -b ../roadmap_DHS_summaries/bed/all_peaks_ids.bed > ../roadmap_DHS_summaries/bed/peak_coverage.bed'")
+#system("sbatch --wrap='bedtools coverage -d -a ../roadmap_DHS_summaries/bed/all_DHS_ids.bed -b ../roadmap_DHS_summaries/bed/all_peaks_ids.bed > ../roadmap_DHS_summaries/bed/peak_coverage.bed'")
 
 jamm_peaks_gr<-jamm_peaks %>% dplyr::rename(seqnames=chromosome) %>% as_granges()
 
@@ -163,7 +166,8 @@ supp1_b<-ggplot(hits_overlaps_filt, aes(x=factor(total), y=perc_overlap_peak, fi
   theme_bw(base_size = 8)+
   #guides(fill=guide_legend(title="Number of tissues"))+
   basic_theme+
-  theme(legend.position = "none")+
+  theme(legend.position = "none",
+        axis.text = element_text(color="black"))+
   scale_fill_manual(values = specificityColors)
 #could also just take the overlap of any 2 tissues as an example
 
@@ -172,9 +176,16 @@ supp1_a<-ggplot(all_tissues_peaks_summary %>% mutate(tissue=gsub("_"," ",tissue)
   theme_bw(base_size = 8)+
   basic_theme+
   xlab("PD")+
-  theme( legend.title = element_blank())+
-  ylab("Peak width in bp")+
+  theme( legend.title = element_blank(),
+         axis.text = element_text(color="black"))+
+  ylab("Peak width (bp)")+
   scale_color_manual(values=tissueColors)
+
+
+# Add CRE PD and expression PD agreements
+supp1_c<-fig("../figures/corrplot_PD_EPD.pdf", 
+            b_margin = ggplot2::margin(-10,0,-10,0), link_dim = T)+
+  theme(plot.margin = margin(0,0,0,0))
 
 
 # add mixed model outputs: this is generated in 1.4_run_model_permutations_expression_pleiotropy.R
@@ -191,21 +202,21 @@ enh_expr_suppl<-pred$coef %>% separate(term, into=c("type","CGI","PD"), sep="_",
   ylab(expression(beta~"weights"))+ guides(colour = "none")+
   theme_bw( base_size = 8 ) +
   basic_theme +
-             theme(legend.title = element_blank(),
-                   legend.position = "bottom",
-                   legend.box = "horizontal",
-                   legend.direction = "horizontal",
-                   legend.key.size = unit(3,"mm")) +
-  theme(legend.title = element_blank(),
-        legend.position = "None",
-        legend.background = element_rect(fill='transparent'))
+  theme(axis.text = element_text(color="black"),
+        legend.position = "None")
 enh_expr_suppl
 
+suppl_top<-a/b + plot_annotation(tag_levels = "A") & theme(plot.tag=element_text(size=12,face = "bold"))
+suppl_top2<-plot_grid(suppl_top, supp1_c, rel_widths = c(0.7,1), labels = c("","C"), label_size = 12)
+suppl_bottom<-plot_grid(NULL,enh_expr_suppl,NULL, ncol=3, rel_widths = c(0.23,1,0.23))
+suppl1<-plot_grid(suppl_top2, suppl_bottom, ncol=1, rel_heights = c(1,0.7),
+                  labels = c("","D"), label_size = 12)
+ggsave("../figures/suppl1.pdf", suppl1, height=155, width =162.5, units = "mm")
 
-suppl_top<-plot_grid(supp1_a,supp1_b, rel_widths = c(0.4,0.3), labels = c("A","B"), scale=0.97, label_x = c(0,-0.05), label_size = 12)
-suppl1<-plot_grid(suppl_top,enh_expr_suppl, labels = c("","C"), ncol=1, label_size = 12, rel_heights = c(0.5,0.9), scale=c(1,0.95))
-
-ggsave("../figures/suppl1.pdf", suppl1, height=150*0.85, width =162.5*0.75, units = "mm")
+# suppl_top<-plot_grid(supp1_a,supp1_b, rel_widths = c(0.4,0.3), labels = c("A","B"), scale=0.97, label_x = c(0,-0.05), label_size = 12)
+# suppl1<-plot_grid(suppl_top, supp1_c, enh_expr_suppl, labels = c("","C","D"), ncol=1, label_size = 12, rel_heights = c(0.5,0.75,0.9), scale=c(1,1,0.95))
+# ggsave("../figures/suppl1.pdf", suppl1, height=160, width =162.5*0.75, units = "mm")
+# 
 
 
 ```

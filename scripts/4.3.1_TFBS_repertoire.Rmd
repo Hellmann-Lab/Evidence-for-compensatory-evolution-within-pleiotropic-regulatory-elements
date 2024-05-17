@@ -1,0 +1,440 @@
+---
+title: "TFBS repertoire"
+author: "Zane Kliesmete"
+date: "2023-09-28"
+output: pdf_document
+---
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+libs<-c("ggplot2","ggpubr","RMySQL","tidyverse","cowplot","data.table","GenomicRanges", "patchwork", "broom", "RColorBrewer")
+sapply(libs, require, character.only=T)
+
+tissueColors <- c( "#9E0142" ,"#D53E4F", "#F46D43", "#FDAE61", "#FFD92F" ,"#ABDDA4", "#66C2A5", "#3288BD", "#5E4FA2")
+names(tissueColors) <-  c("adrenal gland", "brain", "heart", "kidney", "large intestine", "lung", "muscle", "stomach", "thymus")
+
+specificityColors <- c( "#A3753B", "#CC9B57", "#E7CF97", "#F8EDD0", "#F7F7F7", "#D2EEEA", "#99D7CE", "#5DACA5", "#33847E")
+names(specificityColors) <-  c(1:9)
+
+regionColors <- c("#9CA578","#3288BD")
+names(regionColors) <-  c("Enhancer", "Promoter")
+
+DA_colors<-c("#AEAEC2","#606080")
+names(DA_colors)<-c("Not conserved", "Conserved")
+
+basic_theme<-  theme(axis.title=element_text(size=8.5),
+        axis.text = element_text(color="black", size=7),
+        legend.text = element_text(size = 6.5),
+        legend.key.size = unit(0.8, "lines"),
+        legend.margin=margin(0.3,0.3,0.3,0.3),
+        legend.box.margin=margin(0.2,0.2,0.2,0.2))
+
+
+basic_theme_ins<-  theme(axis.title=element_text(size=9.5),
+                     axis.text = element_text(color="black", size=8.5),
+                     legend.title = element_text(size = 7.5), 
+                     legend.text = element_text(size = 8),
+                     legend.key.size = unit(0.5, "lines"),
+                     legend.margin=margin(0.1,0.1,0.1,0.1),
+                     legend.box.margin=margin(0.1,0.1,0.1,0.1),
+                     panel.grid.major = element_line(size = 0.35),
+                     panel.grid.minor = element_blank(),
+                     strip.text.x = element_text(size = 10))
+
+basic_theme_ins2<-  theme(axis.title=element_text(size=8),
+                         axis.text = element_text(color="black", size=7),
+                         legend.title = element_text(size = 7.3), 
+                         legend.text = element_text(size = 7),
+                         legend.key.size = unit(0.5, "lines"),
+                         legend.margin=margin(0,0,0,0),
+                         legend.box.margin=margin(0,0,0,0),
+                         legend.background = element_blank(), 
+                         legend.box.background = element_blank(),
+                         panel.grid.major = element_line(size = 0.35),
+                         panel.grid.minor = element_blank(),
+                         strip.text = element_text(size = 8))
+
+```
+
+## Load data
+
+```{r dat}
+
+source("../ATACseq/scripts/TFBS_plotting_functions_ATAC.R")
+source("../ATACseq/scripts/TFBS_analysis_functions_ATAC.R")
+source("tf_functions.R")
+
+dnase_jamm_long<-readRDS("../roadmap_DHS_summaries/region_summary/jamm_per_tissue.rds") %>%
+  mutate(region_id = as.factor(region_id))
+
+
+jamm_region_info_full<-readRDS("../roadmap_DHS_summaries/region_summary/jamm_region_info_full.rds")
+DHS_to_gene<-readRDS("../CRE_to_Gene/DHS_to_gene.rds") %>%
+    mutate(assignment=gsub("enh","Enhancer",assignment),
+           assignment=gsub("prom","Promoter",assignment),
+           total = as.factor(total),
+           region_id = as.factor(region_id))
+
+# ok, no unambiguosly assigned region
+DHS_to_gene %>% group_by(region_id) %>% summarise(n=length(unique(assignment))) %>% filter(n>1)
+
+# select only similar-length orthologues without Ns (for the DA stuff)
+jammSeq_inATAC<-readRDS("../ATACseq/RDS/jamm_inATAC.rds") %>% 
+  filter(similar_width=="yes", Ns_hg38==0, Ns_macFas6==0) %>% ungroup()
+
+
+seq_vs_TFBS<-readRDS("../ATACseq/cbust/RDS/seq_vs_TFBS_10perc.rds")
+
+```
+## Load TFBS repertoure conservation stuff
+
+```{r load}
+
+dd_10perc_exprTissues_filt<-data.table::fread("../ATACseq/cbust/top10perc_motifs_exprTissues_dt.csv")
+
+dd_10perc_exprTissues<- dd_10perc_exprTissues_filt %>%
+  calculate_per_region_TF_stats() %>%
+  mutate(region_id = as.factor(region_id)) 
+
+TFBS_enhprom<-dd_10perc_exprTissues %>% 
+  inner_join(DHS_to_gene %>% dplyr::transmute(region_id=as.factor(region_id), assignment, total) %>% distinct()) 
+
+# per tissue
+TFBS_tissues<-label_tissue(dd_10perc_exprTissues, dnase_jamm_long) %>%
+  mutate(Tissue = gsub("_", " ", Tissue))
+
+
+# NPC stuff
+stringent_set_NPC<-readRDS("../ATACseq/RDS/jammPeaks_vs_ATACPeaks_NPC_stringent.rds") %>%
+  filter(openness!="Not open") %>%
+  mutate(DA=ifelse(openness == "Always open", "Conserved", "Not conserved"),
+         region_id = as.factor(region_id),
+         total = as.factor(total)) %>%
+  dplyr::select(region_id, DA, total, CGI, assignment) %>% distinct()
+
+
+#dd <-  data.table::fread("../ATACseq/cbust/topNmotifs_ipsc_npc_unfiltered_dt.csv" )
+#dd_10perc_exprNPC_filt<- dd[ minminRNK<=ceiling(nMotif*.1) ][ ,minminRNK:=NULL ][,nMotif:=NULL]
+#data.table::fwrite(dd_10perc_exprNPC_filt, "../ATACseq/cbust/top10perc_motifs_exprNPC_dt.csv")
+dd_10perc_exprNPC_filt <-  data.table::fread("../ATACseq/cbust/top10perc_motifs_exprNPC_dt.csv" )
+
+dd_10perc_stringent <- dd_10perc_exprNPC_filt %>% 
+  calculate_per_region_TF_stats() %>% 
+  mutate(region_id = as.factor(region_id)) %>%
+  inner_join(stringent_set_NPC)
+
+```
+
+## Plot repertoire
+
+```{r conservation}
+
+ymin=0.585
+ymax=0.72
+
+p_diverg1 <- ggline(TFBS_enhprom %>% 
+                      mutate(label="TFBS repertoire conservation:",
+                             d = 1-canb_corr),
+                    x = "total", y = "d",
+                    color = "assignment", palette = c("#9CA578","#3288BD"),
+                    add = "mean_se",point_size=0.00001,plot_type="l", size=0.7) +
+  theme_bw()+
+  basic_theme_ins2+
+  ylab(expression("Repertoire conservation ("~1-bar(d)[C[MH]]~")"))+
+  xlab("PD")+
+  facet_grid(.~label)+
+  theme(legend.position = c(0.75,0.14))
+  
+p_diverg1<-ggpar(p_diverg1, ylim=c(ymin,ymax))+
+  theme(legend.title = element_blank())
+
+
+
+p_diverg2 <- ggline(TFBS_tissues %>% 
+                      mutate(label="Per tissue", 
+                             d = 1-canb_corr), 
+                    x = "total", y = "d",
+                    color = "Tissue", palette = tissueColors,
+                    add = "mean", 
+                    plot_type = "l", 
+                    size = 0.6) +
+  theme_bw()+
+  basic_theme_ins2+
+  xlab("PD")+
+  facet_grid(.~label)+
+  theme(legend.position = c(0.75,0.33))
+
+p_diverg2<-ggpar(p_diverg2, ylim=c(ymin,ymax))+
+  theme(axis.text.y = element_blank(),
+        axis.title.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        legend.title = element_blank())
+
+
+
+p_diverg3_2 <- ggline(dd_10perc_stringent %>% mutate(label="Cross-species accessibility",
+                                                     d = 1-canb_corr),
+                 x = "total", y = "d", 
+                 color = "DA", palette =DA_colors,
+                 add = "mean_se", point_size=0.00001, 
+                 plot_type="l", size = 0.7) +
+  theme_bw()+
+  basic_theme_ins2+
+  xlab("PD")+
+  facet_grid(.~label)+
+  theme(legend.position = c(0.75, 0.14))
+
+p_diverg3_2<-ggpar(p_diverg3_2, ylim=c(ymin,ymax))+
+  theme(axis.text.y = element_blank(),
+        axis.title.y = element_blank(),
+        axis.ticks.y = element_blank(),
+        legend.title = element_blank())
+
+
+```
+
+## Repertoire vs positions
+
+```{r reppos}
+
+seq_vs_TFBS_values<-seq_vs_TFBS %>%
+  pivot_longer(cols=c(meanPhastCons, meanPhyloP, canb_cons.exprTissues, meanBindingAgreement, CpG_obs_exp_cons)) %>%
+  group_by(name, total) %>%
+  dplyr::summarise(mean=mean(value),
+                   SE=sd(value)/sqrt(length(value))) %>%
+  pivot_wider(names_from="name", values_from=c("mean", "SE"))
+
+
+pp<-ggplot(seq_vs_TFBS_values %>% mutate(total=as.factor(total)), 
+       aes(x=mean_meanBindingAgreement, y=mean_canb_cons.exprTissues))+
+  geom_errorbar(aes(ymin = mean_canb_cons.exprTissues-SE_canb_cons.exprTissues,
+                    ymax = mean_canb_cons.exprTissues+SE_canb_cons.exprTissues))+
+  geom_errorbarh(aes(xmin = mean_meanBindingAgreement-SE_meanBindingAgreement,
+                    xmax = mean_meanBindingAgreement+SE_meanBindingAgreement))+
+  geom_point(aes(fill=total), colour="black",pch=21, size=2.2, stroke=0.4)+
+  theme_bw()+
+  basic_theme_ins2+
+  scale_fill_manual(values=specificityColors)+
+  xlab(expression("Position conservation ("~bar(IoU)[MH]~")"))+
+  ylab(expression("Repertoire conservation ("~1-bar(d)[C[MH]]~")"))+
+  theme(panel.background = element_rect(fill="grey95"),
+        legend.position = "bottom", 
+        axis.text.y = element_text(margin=margin(l=-4)))+
+  labs(fill="PD")
+
+```
+
+## Z-scores
+
+```{r zscores}
+
+#add z-scores
+seq_vs_TFBS_z<-seq_vs_TFBS %>%
+  mutate(Sequence = (meanPhyloP-mean(meanPhyloP))/sd(meanPhyloP),
+         `TFBS repertoire`= ((canb_cons.exprTissues-mean(canb_cons.exprTissues))/sd(canb_cons.exprTissues)),
+         `TFBS position`= ((meanBindingAgreement-mean(meanBindingAgreement))/sd(meanBindingAgreement)),
+         total = as.factor(total)) %>%
+  pivot_longer(cols=c(Sequence, `TFBS repertoire`, `TFBS position`)) %>%
+  group_by(name, total) %>%
+  dplyr::summarise(mean=mean(value),
+                   SE=sd(value)/sqrt(length(value)))
+
+p_cons<-ggplot(seq_vs_TFBS_z,
+       aes(x=total, y=mean, group=name, color=name))+
+  geom_errorbar(aes(ymin=mean-SE, ymax=mean+SE), width=0.1)+
+  geom_line(linewidth=0.7)+
+  theme_bw()+
+  basic_theme_ins2+
+  scale_color_manual(values=c("Sequence"="#E3B5A4",
+                              "TFBS position"="#D44D5C",
+                              "TFBS repertoire"="#8F3D52"))+
+  geom_smooth(color="transparent", alpha=0.1)+
+  ylab("Standardized conservation\nmetric score")+
+  xlab("PD")+
+  theme(legend.position = c(0.5,0.18),
+        legend.title = element_blank(),
+        axis.text.y = element_text(margin=margin(l=-4)),
+        legend.spacing.y = unit(0.2, "cm"))
+
+```
+
+## Load pdfs etc
+
+```{r other_data}
+
+TFBS_schema<- ggdraw() + 
+  cowplot::draw_image(magick::image_read("../figures/TFBS_schema.png"))+
+  theme(plot.margin = unit(c(0, 0,0,0), "cm"))
+
+compensation<- ggdraw() + 
+  cowplot::draw_image(magick::image_read("../figures/Compensation2.png"))+
+  theme(plot.margin = unit(c(0, 0,0,0), "cm"))
+
+pleio_summary<- ggdraw() + 
+  cowplot::draw_image(magick::image_read("../figures/pleio_summary_postRevisions.png"))+
+  theme(plot.margin = unit(c(0, 0,0,0), "cm"))
+
+```
+
+## Combine 
+```{r comb}
+ 
+top<-plot_grid(p_diverg1, p_diverg3_2, p_diverg2, ncol=3, rel_widths = c(1,0.85,0.85),
+               labels = c("A","B","C"), label_size = 12, label_x=c(0,-0.05,-0.05))
+right<-plot_grid(pp, p_cons, align = "hv", axis="tblr", 
+                 labels = c("E","F"), label_size = 12, label_x=-0.04)
+middle<-plot_grid(TFBS_schema, right, rel_widths = c(1,1.95),
+                  labels = c("D",""), label_size = 12)
+leg<-get_legend(pp + theme(legend.position="right",
+                           legend.margin=margin(0,1,0,-5),
+                           legend.box.margin=margin(0,1,0,-5)))
+bottom<-plot_grid(compensation, pleio_summary, leg, scale = c(0.85,1,1),
+                  rel_widths = c(0.9,1,0.1), labels = c("G","H",""), 
+                  label_size = 12, label_y = 0.9, ncol=3)
+
+fig4<-plot_grid(top, middle, bottom, rel_heights = c(1.05,1.05,1.1), ncol=1)
+#ggsave("../figures/figure5_combis2.pdf", fig4, height = 180, width=162.5, units="mm")
+ggsave("../figures/figure5_combis3.pdf", fig4, height = 180, width=162.5, units="mm")
+
+
+```
+
+
+# Stuff for supplementary figure 
+
+### Shuffling of Canberra distances between human and macaque
+
+```{r shuffle}
+
+
+dd_10perc<-data.table::fread("../ATACseq/cbust/top10perc_motifs_exprNPC_dt.csv")
+
+dd_10perc_shuffled_list<-lapply(1:10, function(x){
+  
+  set.seed(x)
+  # do the shuffling
+  shuf<-dd_10perc %>% 
+    distinct(region_id) %>% 
+    left_join(jamm_region_info_full %>% dplyr::select(region_id, total)) %>%
+    group_by(total) %>%
+    mutate(region_id_shuffled=sample(region_id)) %>%
+    ungroup() %>%
+    dplyr::select(-total)
+
+  dd_10perc %>% 
+    left_join(shuf) %>%
+    mutate(region_id = ifelse(species=="M",region_id_shuffled,region_id)) %>%
+    calculate_per_region_TF_stats() 
+
+})
+
+dd_10perc_shuffled_df<-bind_rows(dd_10perc_shuffled_list, .id="iter") %>%
+  inner_join(seq_vs_TFBS %>% transmute(region_id = as.double(region_id), total,assignment) %>% drop_na())
+
+
+shuffling_summary<-dd_10perc_shuffled_df %>% ungroup() %>% 
+  mutate(assignment = str_to_title(assignment)) %>%
+   group_by(total,assignment,iter) %>% 
+   mutate(d = 1-canb_corr ) %>% 
+   reframe( sem = sd( d)/sqrt(length(region_id)) ,
+              d = mean( d )) %>%
+   group_by(total,assignment) %>%
+   dplyr::reframe(percentile = c(2.5,50,97.5),
+                    CI = quantile(d,c(0.025,0.5,.975) )) %>% 
+   ungroup() %>%
+     pivot_wider(names_from = percentile,names_prefix = "perc_",values_from = CI) %>%
+    left_join(TFBS_enhprom %>% 
+              transmute(region_id=as.double(region_id), total=as.double(total), 
+                        assignment, canb_cons = 1-canb_corr) %>% 
+              group_by(total, assignment) %>%
+              reframe(sem_canb_cons = sd(canb_cons)/sqrt(length(region_id)),
+                      mean_canb_cons = mean(canb_cons)))
+
+
+pp_shuffled_prom<-shuffling_summary %>%
+  filter(assignment == "Promoter") %>%
+   ggplot(aes(x=total, y=mean_canb_cons ))+
+   geom_line(aes(color = assignment))+
+  geom_point(aes(color = assignment))+
+   geom_ribbon(aes(ymin=perc_2.5, ymax=perc_97.5),col="darkgrey",fill="darkgrey",alpha=0.4)+
+   facet_grid(.~assignment)+
+  scale_x_continuous(breaks=c(1:9))+
+  scale_color_manual(values=regionColors)+
+  basic_theme_ins+
+  ylab(expression("Repertoire conservation ("~1-bar(d)[C[MH]]~")"))+
+  theme(legend.position = "none")+
+  xlab("PD")
+ 
+pp_shuffled_enh<-shuffling_summary %>%
+  filter(assignment == "Enhancer") %>%
+   ggplot(aes(x=total, y=mean_canb_cons ))+
+   geom_line(aes(color = assignment))+
+  geom_point(aes(color = assignment))+
+   geom_ribbon(aes(ymin=perc_2.5, ymax=perc_97.5),col="darkgrey",fill="darkgrey",alpha=0.4)+
+   facet_grid(.~assignment)+
+  scale_x_continuous(breaks=c(1:9))+
+  scale_color_manual(values=regionColors)+
+  basic_theme_ins+
+  ylab(expression("Repertoire conservation ("~1-bar(d)[C[MH]]~")"))+
+  theme(legend.position = "none")+
+  xlab("PD")
+
+
+```
+
+### GC, Info content of the PD1 and PD9 enriched TFs
+```{r gc}
+
+motifPD_cols<-c("#33847E", "grey90", "#A3753B")
+names(motifPD_cols)<-c("PD9","other", "PD1")
+
+motif_PD_ranks<-readRDS("../ATACseq/cbust/RDS/motif_PD_ranks.rds") %>%
+  inner_join(readRDS("../ATACseq/cbust/expressedTFs_inTissues.rds"))
+
+library(TFBSTools)
+library(universalmotif)
+library(JASPAR2020)
+
+
+opts <- list()
+opts[["collection"]] <- "CORE"
+opts[["matrixtype"]] <- "PFM"
+opts[["tax_group"]] <- "vertebrates"
+
+PFMatrixList <- getMatrixSet(JASPAR2020, opts)
+
+TF_GC<-lapply(PFMatrixList, function(x) {
+  pfm_t<-x@profileMatrix
+  prop<-pfm_t/colSums(pfm_t)
+  rowSums(prop)/dim(prop)[2]  
+})
+
+TF_GC_df<-TF_GC %>% bind_rows(.id="motif_ID") %>% rowwise() %>% 
+  inner_join(motif_PD_ranks) %>%
+  mutate(motif_GC = sum(G, C),
+         tissue_basic = word(tissue, 1,1," "),
+         tissue_basic = gsub(":","", tissue_basic),
+         tissue_basic = factor(tissue_basic, levels=c("PD1", "PD9", "other")),
+         tissue_stripe = paste0(tissue_basic,"_",is_stripe))
+
+
+IC<-ggplot(TF_GC_df, aes(x=tissue_basic, y=IC, fill=tissue_basic))+
+  geom_boxplot(outlier.size = 0.5)+
+  basic_theme_ins+
+  scale_fill_manual(values=motifPD_cols)+
+  theme(axis.title.x = element_blank(),
+        legend.position = "none")+
+  ylab("Motif information content (IC)")
+
+GC<-ggplot(TF_GC_df, aes(x=tissue_basic, y=motif_GC, fill=tissue_basic))+
+  geom_boxplot(outlier.size = 0.5)+
+  basic_theme_ins+
+  scale_fill_manual(values=motifPD_cols)+
+  theme(axis.title.x = element_blank(),
+        legend.position = "none")+
+  ylab("Motif GC content")
+
+suppl_TFBS<-(IC|GC)/(pp_shuffled_enh|pp_shuffled_prom)+plot_annotation(tag_levels = 'A') & theme(plot.tag=element_text(size=12,face = "bold"))
+ggsave("../figures/supplTFBS.pdf", suppl_TFBS, height = 132, width = 132.5, units="mm")
+
+
+```

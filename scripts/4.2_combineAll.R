@@ -5,6 +5,8 @@ library(tidyverse)
 library(cowplot)
 library(data.table)
 library(DESeq2)
+library(fmsb)
+
 
 tissueColors <- c( "#9E0142" ,"#D53E4F", "#F46D43", "#FDAE61", "#FFD92F" ,"#ABDDA4", "#66C2A5", "#3288BD", "#5E4FA2")
 names(tissueColors) <-  c("adrenal_gland", "brain", "heart", "kidney", "large_intestine", "lung", "muscle", "stomach", "thymus")
@@ -60,15 +62,15 @@ TF_dists<-readRDS("ATACseq/cbust/RDS/TFBS_position/summarized_TFBS_distances_exp
   mutate(indel_perc=indel_bp/aln_length,
          mm_perc=mismatches/aln_length)
 
-quantile(TF_dist$aln_length, probs=c(0.05,0.5,0.95))
-quantile(TF_dist$indel_perc, probs=c(0.05,0.5,0.95))
-quantile(TF_dist$mm_perc, probs=c(0.05,0.5,0.95))
-quantile(TF_dist$nindel, probs=c(0.05,0.5,0.95))
+quantile(TF_dists$aln_length, probs=c(0.05,0.5,0.95))
+quantile(TF_dists$indel_perc, probs=c(0.05,0.5,0.95))
+quantile(TF_dists$mm_perc, probs=c(0.05,0.5,0.95))
+quantile(TF_dists$nindel, probs=c(0.05,0.5,0.95))
 
 
 # DEG, DA, OPENNESS -----------------------------------------------------------------
 
-exprdds <- readRDS("RNAseq/RDS/dds_clean.rds")
+exprdds <- readRDS("expression_conservation/RDS/dds_clean.rds")
 DE<-lapply( c("NPC"), function(i){
   tmp <- colData(exprdds)
   tmp <- tmp[tmp$Differentiation == i,]
@@ -159,7 +161,6 @@ saveRDS(seq_vs_TFBS, "ATACseq/cbust/RDS/seq_vs_TFBS_10perc.rds")
 
 # Spider / radar plot -------------------------------------------------------------
 
-library(fmsb)
 seq_vs_TFBS<-readRDS("ATACseq/cbust/RDS/seq_vs_TFBS_10perc.rds")
 
 
@@ -169,7 +170,7 @@ chart<-seq_vs_TFBS %>%
   dplyr::summarise(mean = mean(abs(value), na.rm=T)) %>%
   pivot_wider(id_cols = total, names_from = "name", values_from = "mean") %>%
   # Add downstream gene expression
-  left_join(readRDS("RNAseq/RDS/DE_DA_table.rds") %>%
+  left_join(readRDS("expression_conservation/RDS/DE_DA_table.rds") %>%
               filter(celltype=="NPC", !is.na(region_id)) %>%
               group_by(total) %>%
               dplyr::summarise(LFC.DE = mean(abs(log2FoldChange)))) %>%

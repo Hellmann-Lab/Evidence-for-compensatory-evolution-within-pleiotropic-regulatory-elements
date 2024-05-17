@@ -5,23 +5,23 @@ library(vsn)
 library(plyranges)
 library(tidyverse)
 
-#setwd("/data/share/htp/pleiotropy/paper_data/")
+setwd("/data/share/htp/pleiotropy/paper_data/")
 source("scripts/helper_functions.R")
-# to see the zUMIs run, check RNAseq folder
+
 
 # COLLECT THE DATA --------------------------------------------------------
 
 
 # Build info data frame (bar code, sample, species) ####
-bc_sample_species<-read.csv("RNAseq/sample_annotation.txt")
+bc_sample_species<-read.csv("expression_conservation/sample_annotation.txt")
 
 # Get zUMI expression data ####
 ## hg38
-zumihg38 <- readRDS("RNAseq/zumis/hg38/zUMIs_output/expression/npc_diff_hg38.dgecounts.rds")
+zumihg38 <- readRDS("expression_conservation/zumis/hg38/zUMIs_output/expression/npc_diff_hg38.dgecounts.rds")
 exon_mat_hg38<- as.matrix(zumihg38$umicount$exon$all) 
 
 ## macFas6
-zumimacFas6 <- readRDS("RNAseq/zumis/macFas6/zUMIs_output/expression/npc_diff_macFas6.dgecounts.rds")
+zumimacFas6 <- readRDS("expression_conservation/zumis/macFas6/zUMIs_output/expression/npc_diff_macFas6.dgecounts.rds")
 exon_mat_macFas6 <- as.matrix(zumimacFas6$umicount$exon$all)
 
 
@@ -62,7 +62,7 @@ cntSOI <- exon_mat_hg38 %>%
   column_to_rownames("exon") %>% 
   as.matrix() 
 
-write_csv2(as.data.frame(cntSOI), "RNAseq/cnt_matrix_full.csv")
+write_csv2(as.data.frame(cntSOI), "expression_conservation/cnt_matrix_full.csv")
 
 ## Check rows of colDataSOI match cols of cntSOI ####
 table(rownames(colDataSOI) == colnames(cntSOI))
@@ -123,7 +123,7 @@ axis(side=1,
 length(rwm[rwm<=2])/length(rwm) # 22% genes show <= 2 UMI counts in average
 length(rwm[rwm<=10])/length(rwm)  # 54% genes show <= 10 UMI counts in average
 
-dev.copy2pdf(file = "RNAseq/figures/DropOut_AvgUMIcnt.pdf", width = 8, height = 6)
+dev.copy2pdf(file = "expression_conservation/figures/DropOut_AvgUMIcnt.pdf", width = 8, height = 6)
 
 
 # Create DDS object ####
@@ -140,22 +140,22 @@ ddsDif_filtered <- estimateDispersions(ddsDif_filtered)
 par(mfrow = c(1,1))
 plotDispEsts(ddsDif_filtered)
 
-dev.copy2pdf(file = "RNAseq/figures/dispEsts.pdf", width = 8, height = 6)
+dev.copy2pdf(file = "expression_conservation/figures/dispEsts.pdf", width = 8, height = 6)
 
 vsd_filtered<-varianceStabilizingTransformation(ddsDif_filtered)
 vsdMat_filtered<-assay(vsd_filtered)
 
 vsn::meanSdPlot(vsdMat_filtered)
-ggsave("RNAseq/figures/variance_stabilized_counts_clean.png", height = 6, width = 8)
+ggsave("expression_conservation/figures/variance_stabilized_counts_clean.png", height = 6, width = 8)
 
 k<-reshape2::melt(as.matrix(vsdMat_filtered))
 colnames(k)<-c("Ensembl","full_name","var_stabilized_counts")
 ggplot(data = k, aes(x=full_name, y=var_stabilized_counts)) + geom_boxplot() + coord_flip()+ theme(axis.text.y = element_text(size=5))
 
-ggsave("RNAseq/figures/normBoxplot_clean.png", height = 6, width = 8)
+ggsave("expression_conservation/figures/normBoxplot_clean.png", height = 6, width = 8)
 
 # SAVE THE DATA ####
-saveRDS(colDataDif, file ="RNAseq/RDS/colData_clean.rds")
-saveRDS(cntDif_filtered, file ="RNAseq/RDS/cnt_clean.rds")
-saveRDS(ddsDif_filtered, file ="RNAseq/RDS/dds_clean.rds")
+saveRDS(colDataDif, file ="expression_conservation/RDS/colData_clean.rds")
+saveRDS(cntDif_filtered, file ="expression_conservation/RDS/cnt_clean.rds")
+saveRDS(ddsDif_filtered, file ="expression_conservation/RDS/dds_clean.rds")
 

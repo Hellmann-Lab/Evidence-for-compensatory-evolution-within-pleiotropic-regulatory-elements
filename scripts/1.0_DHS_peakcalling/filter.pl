@@ -10,7 +10,7 @@ filter.pl
 
 =head1 DESCRIPTION
 
-A general utility used for quickly filtering files that I wrote while working on my Master's thesis.
+A roadmap_DHS_summaries utility used for quickly filtering files that I wrote while working on my Master's thesis.
 
 =head1 AUTHOR
 

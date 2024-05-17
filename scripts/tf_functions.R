@@ -35,6 +35,7 @@ plot_topGO<-function(topGO, p_cutoff = NULL, top_n = NULL, n_size_breaks=2){
   topGO$Significant<-as.integer(topGO$Significant)
   topGO$Annotated<-as.integer(topGO$Annotated)
   topGO$Fisher<-as.numeric(topGO$Fisher)
+  topGO<-topGO %>% arrange(-Significant/Expected)
   
   if(!is.null(p_cutoff)){
     topGO<-topGO %>% dplyr::filter(Fisher<=p_cutoff)
@@ -46,7 +47,7 @@ plot_topGO<-function(topGO, p_cutoff = NULL, top_n = NULL, n_size_breaks=2){
   
   breaks = seq(min(topGO$Significant),max(topGO$Significant), length.out = n_size_breaks)
   breaks_x = round(seq(min(topGO$Significant/topGO$Annotated),max(topGO$Significant/topGO$Annotated), length.out = 3), 2)
-  breaks_col = round(seq(min(topGO$Fisher),max(topGO$Fisher), length.out = 2), 2)
+  breaks_col = round(seq(min(topGO$Fisher),max(topGO$Fisher), length.out = 3), 2)
   
   ggplot(topGO %>% dplyr::rename(`Fisher's p`=Fisher), 
          aes(reorder(Term,Significant/Annotated),
@@ -61,7 +62,7 @@ plot_topGO<-function(topGO, p_cutoff = NULL, top_n = NULL, n_size_breaks=2){
           axis.text = element_text(size=7, color="black"),
           axis.title.y=element_blank(),
           axis.text.y=element_text())+
-    guides(fill=guide_colorbar(barwidth = 0.5, barheight=1.5))+
+    guides(fill=guide_colorbar(barwidth = 0.5, barheight=1.6))+
     theme(legend.title = element_text(size = 6.5, margin = margin(b=0)), 
           legend.text = element_text(size = 6, margin=margin(t=0,b=0,l=0,r=0)),
           legend.background = element_rect(fill="transparent",colour=NA),
@@ -213,7 +214,8 @@ ranks_to_topGO<-function(tis = NULL, ranked=NULL, PD, FC = 1.5, n_cnet=4, PD_fil
   print(table(motifs_ranks$isPD))
   
   # Do topGO (padj is the decisive column for foreground / background)
-  topGO_PD_TFs_ranked<-do_topGO(motifs_ranks, ont="BP")
+  topGO_PD_TFs_ranked<-do_topGO(motifs_ranks, ont="BP") %>% 
+    arrange(-Significant/Expected)
   
   # Make cnets
   cnet_PD<-make_cnet_from_topGO(full_DE_table = motifs_ranks,
@@ -237,4 +239,31 @@ ranks_to_topGO<-function(tis = NULL, ranked=NULL, PD, FC = 1.5, n_cnet=4, PD_fil
   return(list(topGO_PD = topGO_PD_TFs_ranked,
               cnet_PD = cnet_PD))
   
+}
+
+
+
+fit_permutation_diversity<-function(df, shuffle){
+  
+  if(shuffle){ 
+    print("shuffling")
+    df2<- df %>% ungroup %>% group_by(assignment) %>%  mutate(total= sample(total)) 
+  }else{
+    print("not shuffling")
+    df2<- df
+  }
+  
+  mod_div<-lm(log(diversityH) ~ width + GC_content + assignment + total, df2)
+  
+  rsq<-partial_r2(mod_div) %>% 
+    as.data.frame() %>% 
+    rownames_to_column("Predictor") 
+  colnames(rsq)[2]<-"R2"
+  
+  rsq_total<-rsq %>% 
+    filter(grepl("total",Predictor)) %>% 
+    dplyr::summarise(Predictor = "total", R2 = sum(R2)) %>% 
+    bind_rows(rsq %>% filter(!grepl("total",Predictor)))
+  
+  return(rsq_total)
 }

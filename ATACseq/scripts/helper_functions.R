@@ -189,9 +189,9 @@ calc_OL<-function(tab1, tab2, filt = T, rel_width_OL_cutoff = 0.1, id1_col = "re
   
   overlaps_df<-overlaps_df %>%
     group_by(index1) %>%
-    mutate(n_Ind1ToInd2 = length(unique(index2))) %>%
+    dplyr::mutate(n_Ind1ToInd2 = length(unique(index2))) %>%
     group_by(index2) %>%
-    mutate(n_Ind2ToInd1= length(unique(index1))) %>%
+    dplyr::mutate(n_Ind2ToInd1= length(unique(index1))) %>%
     ungroup() %>%
     mutate(OneToOne = ifelse(n_Ind1ToInd2==1 & n_Ind2ToInd1==1, T, F)) %>%
     dplyr::select( {{id1_col}}, {{id2_col}}, fracOverlap1, fracOverlap2, width1, width2, n_Ind1ToInd2, n_Ind2ToInd1, OneToOne)

@@ -152,6 +152,7 @@ for (i in c(1:9)){
 
 #subset and recalculate INSIGHT
 system("sbatch /data/share/htp/pleiotropy/paper_data/INSIGHT/scripts/commands_for_all_per_tissue.sh")
+
 ```
 
 
@@ -236,6 +237,7 @@ NPC DA vs non-DA peaks. Steps:\\
 stringent_set_INSIGHT<-readRDS("../ATACseq/RDS/jammPeaks_vs_ATACPeaks_NPC_stringent.rds") %>%
   filter(openness!="Not open") %>%
   inner_join(jamm_region_identifiers %>% mutate(region_id = as.factor(region_id))) %>%
+  filter(region_id %in% jamm_region_info_full$region_id) %>% 
   mutate(chromosome=paste0("chr",chromosome)) %>%
   # remove region_ids that overlap with CDS
   filter(!region_id %in% OL_CDS$region_id) %>%

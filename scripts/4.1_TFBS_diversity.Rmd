@@ -104,7 +104,7 @@ n_tissues_expressedTFs<-readRDS("../roadmap_expression_summaries/summarized_expr
 p_TF_expr<-ggplot(n_tissues_expressedTFs %>% mutate(tissue = gsub("_"," ",tissue)),
                   aes(x=reorder(tissue,n),y=n,fill=forcats::fct_rev(as.factor(cnt)))) + 
        geom_bar(stat="identity")+
-       scale_fill_brewer(palette = "BrBG", direction = -1, name="Expression\nPD")+
+       scale_fill_brewer(palette = "BrBG", direction = -1, name="EPD")+
        coord_flip()+
        ylab( "# expressed TFs" )+
        theme_bw()+
@@ -123,7 +123,7 @@ ggsave("../figures/TF_expression_PD.pdf", height = 4*0.8, width = 5*0.8)
 
 ```{r div}
 # enh/prom
-
+# running this takes some time
 #dd_exprTissues <-  data.table::fread("../ATACseq/cbust/topNmotifs_exprTissues_unfiltered_dt.csv")
 # top 10% ####
 #dd_10perc_exprTissues_filt<- dd_exprTissues[ minminRNK<=ceiling(nMotif*.1) ][ ,minminRNK:=NULL ][,nMotif:=NULL]
@@ -149,10 +149,10 @@ p_div1 <- ggline(TFBS_enhprom %>% mutate(label="TFBS diversity:"),
                  plot_type="l", size = 0.7) +
   theme_bw()+
   basic_theme_ins2+
-  ylab(expression("Diversity ("~e^H~")"))+
+  ylab(expression("TFBS diversity ("~e^H~")"))+
   xlab("PD")+
   #facet_grid(.~label)+
-  theme(legend.title = element_blank(), legend.position = c(0.8, 0.14))
+  theme(legend.title = element_blank(), legend.position = c(0.77, 0.14))
 
 
 p_div1<-ggpar(p_div1, ylim=c(ymin,ymax))+
@@ -188,6 +188,63 @@ diversity_plots<-cowplot::plot_grid(p_div1, p_div2, labels=c("B","C"), label_siz
 ```
 
 
+## DIVERSITY RELATIONSHIP WITH LENGTH AND CPG CONTENT
+
+```{r div_vs_properties}
+
+div_df<-inner_join(
+  jamm_region_info_full %>%  
+    dplyr::mutate(width=end-start) %>% 
+    dplyr::transmute(region_id = as.factor(region_id), width, GC_content),
+  TFBS_enhprom %>% 
+    dplyr::transmute(region_id, diversityH, assignment, total = total)
+) %>% 
+  drop_na() %>% 
+  dplyr::mutate(total_shuffled= sample(total))
+
+ggplot(div_df, aes(x = log(diversityH)))+geom_histogram()
+ggplot(div_df, aes(x = diversityH))+geom_histogram()
+
+
+#car::vif(mod_div)
+true_div<-fit_permutation_diversity(div_df, shuffle=F)
+shuffled_div<-lapply(1:30, function(x){
+  fit_permutation_diversity(div_df, shuffle=T)
+  })
+
+shuffled_div_df<-bind_rows(shuffled_div, .id = "iteration") %>% 
+  group_by(Predictor) %>% 
+  dplyr::summarise(R2 = mean(R2),
+                   lowerCI_R2 = quantile(R2, probs= 0.01),
+                   upperCI_R2 = quantile(R2, probs = 0.99))
+
+
+combined_r2<-bind_rows(true_div %>% dplyr::mutate(type="Observed"),
+                       shuffled_div_df %>% dplyr::mutate(type="Shuffled"))
+
+preddiv<-combined_r2 %>% 
+  filter(Predictor!="(Intercept)") %>% 
+  dplyr::mutate(Predictor=gsub("Promoter","",Predictor),
+                Predictor=gsub("_"," ", Predictor),
+                Predictor=gsub("total", "PD", Predictor),
+                type = ifelse(type=="Observed","Actual","Shuffled PD")) %>% 
+  ggplot(aes(x=Predictor, y = R2, fill=type)) +
+  geom_point(size=1.8,colour="black",pch=21, position=position_dodge(width=0.44)) +
+  geom_errorbar(aes(ymin = lowerCI_R2, ymax = upperCI_R2), width=0.6, linewidth=0.3,
+                position = position_dodge(width=0.44))+
+  scale_fill_manual(values = c("Actual" = "#A28CA6",
+                                "Shuffled PD" = "white"))+
+  theme(axis.text = element_text(color="black"))+
+  coord_flip()+
+  ylab(expression(Partial~R^2)) +
+  labs(fill="Diversity\nprediction")+
+  xlab("")+
+  theme(legend.position = c(0.71,0.2))
+
+```
+
+
+
 ## TF vs MOTIF ENRICHMENT ANALYSIS
 
 ### Do PD ranking per TF per tissue
@@ -199,7 +256,6 @@ dd_perMotif_tissues<-dd_10perc_exprTissues_filt %>%
   dplyr::mutate(region_id = as.factor(region_id)) 
 
 expressedInTissue<-readRDS("../roadmap_expression_summaries/summarized_expression_allTissues.rds")
-
 
 tissues_list<-lapply(unique(expressedInTissue$tissue), function(tis){
   
@@ -217,20 +273,6 @@ combined_ranks_all<-bind_rows(tissues_list) %>%
   group_by(cluster_id_or_motif_name, total) %>%
   dplyr::summarise(n = length(total),
                    avr_prop = mean(prop_CREs))
-
-combined_ranks_all %>% filter(total==9, n==9) %>% arrange(desc(avr_prop)) %>% View
-
-library(JASPAR2020)
-library(TFBSTools)
-seqLogo(toICM(getMatrixByID(JASPAR2020, ID = "MA0741.1")))
-seqLogo(toICM(getMatrixByID(JASPAR2020, ID = "MA1512.1")))
-seqLogo(toICM(getMatrixByID(JASPAR2020, ID = "MA0599.1")))
-seqLogo(toICM(getMatrixByID(JASPAR2020, ID = "MA1122.1")))
-seqLogo(toICM(getMatrixByID(JASPAR2020, ID = "MA1122.1")))
-seqLogo(toICM(getMatrixByID(JASPAR2020, ID = "MA0259.1")))
-seqLogo(toICM(getMatrixByID(JASPAR2020, ID = "MA0162.4")))
-
-
 
 
 tissue_pd1<-bind_rows(tissues_list) %>% 
@@ -303,11 +345,8 @@ saveRDS(combined_ranks_all2, "../ATACseq/cbust/RDS/motif_PD_ranks.rds")
 combined_ranks_all_short<-combined_ranks_all2 %>%
   distinct(TF, is_stripe, is_pioneer, .keep_all = T)
 
-table(combined_ranks_all_short$is_stripe, combined_ranks_all_short$is_PD9)
-fisher.test(matrix(c(26,20,55,448), ncol = 2))
-
-table(combined_ranks_all_short$is_stripe, combined_ranks_all_short$is_PD1)
-fisher.test(matrix(c(8,38,142,361), ncol = 2))
+fisher.test(table(combined_ranks_all_short$is_stripe, combined_ranks_all_short$is_PD9))
+fisher.test(table(combined_ranks_all_short$is_stripe, combined_ranks_all_short$is_PD1))
 
 
 table(combined_ranks_all_short$is_pioneer, combined_ranks_all_short$is_PD9)
@@ -329,7 +368,6 @@ p_stripe<-combined_ranks_all2 %>%
   
 
 
-
 tissueColors_plus <- c( "#9E0142" ,"#D53E4F", "#F46D43", "#FDAE61", "#FFD92F" ,"#ABDDA4", "#66C2A5", "#3288BD", "#5E4FA2", "#33847E", "grey90")
 names(tissueColors_plus) <-  c("PD1: adrenal gland", "PD1: brain", "PD1: heart", "PD1: kidney", "PD1: large intestine", "PD1: lung", "PD1: muscle", "PD1: stomach", "PD1: thymus", "PD9: all tissues", "other")
 
@@ -346,6 +384,7 @@ p_pie<-combined_ranks_all_wide %>% group_by(tissue) %>%
   scale_fill_manual(values=tissueColors_plus)+
   scale_y_reverse()+
   labs(fill="PD-motif\nenrichment")+
+  #labs(fill="Overrepresented\nmotifs\nin CRE PDs")+# PD-motif\nenrichment")+
   theme(legend.position = "left",
         legend.title = element_text(size = 7.5), 
         legend.text = element_text(size = 7),
@@ -365,7 +404,7 @@ p_pie<-combined_ranks_all_wide %>% group_by(tissue) %>%
 ranks_PD9_allTissues<-ranking_by_abundance(reg_id_selection = jamm_region_info_full$region_id, 
                                            dd = dd_perMotif_tissues)
 
-topGO_PD9_allTissues<-ranks_to_topGO(ranked=ranks_PD9_allTissues,
+topGO_PD9_allTissues<-ranks_to_topGO(ranked = ranks_PD9_allTissues,
                                      PD = 9,
                                      FC = 1,
                                      PD_filt = combined_ranks_all_wide$cluster_id_or_motif_name[combined_ranks_all_wide$PD9==9])
@@ -412,27 +451,39 @@ tissues_list_solo$lung$cnet_PD #good
 ```
 
 
-## Put together the current stuff for new fig2
+## Put together fig2
 
-```{r final}
+```{r extra}
 
-p1<-plot_grid(p_TF_expr+basic_theme_ins2, NULL, p_div1, ncol=3, rel_widths = c(1.4,0.08,0.95), labels=c("A","","B"), label_size = 12)
-p2<-plot_grid(p_pie, 
+p1<-plot_grid(p_TF_expr+basic_theme_ins2 + theme(legend.margin=margin(0,1,0,-2),
+                                                 legend.box.margin=margin(0,1,0,-2),
+                                                 plot.margin = unit(c(1,0,1,1), "mm")), 
+              p_div1 + theme(plot.margin = unit(c(1,0.5,1,2), "mm")), 
+              preddiv + basic_theme_ins2 + theme(plot.margin = unit(c(1,1,1,0), "mm")),
+              ncol=3, rel_widths = c(1.1,0.88,0.9),
+              labels=c("A","B","C"), label_size = 12)
+
+p2<-plot_grid(NULL, p_pie, 
               p_PD9 + theme(plot.margin = unit(c(0.3, 0.1, 0,0), "cm"),
-                            plot.title = element_text(color = specificityColors[9],face="bold", size=8))+
-                ggtitle("PD9: all tissues"), rel_widths = c(1,0.9),
-              labels=c("C","D"), label_size = 12)
+                            plot.title = element_text(color = specificityColors[9],
+                                                      face="bold", size=8))+
+                ggtitle("PD9: all tissues"), NULL, ncol=4, 
+              rel_widths = c(0.1,1,0.9,0.1),
+              labels=c("D","","E",""), label_size = 12)
 
-p3<-plot_grid(tissues_list_solo$brain$cnet_PD+
-                theme(legend.position = "none",plot.title = element_text(color = tissueColors["brain"],face="bold", hjust=0.15))+ ggtitle("PD1: brain"),
-              tissues_list_solo$heart$cnet_PD+theme(plot.title = element_text(color = tissueColors["heart"],face="bold", hjust=0.15))+ggtitle("PD1: heart"),
-              label_size = 12, labels=c("E","F"), label_y = 1.05)
+p3<-plot_grid(NULL,
+  tissues_list_solo$brain$cnet_PD +
+    theme(legend.position = "none",
+          plot.title = element_text(color = tissueColors["brain"],face="bold", hjust=0.15))+
+    ggtitle("PD1: brain"),
+  tissues_list_solo$heart$cnet_PD +
+    theme(plot.title = element_text(color = tissueColors["heart"],face="bold", hjust=0.15))+
+    ggtitle("PD1: heart"),
+  NULL, ncol=4, rel_widths = c(0.1,1,1,0.1),
+  label_size = 12, labels=c("","F","G",""), label_y = 1.05)
 
 p_all<-plot_grid(p1,p2,p3, ncol=1, rel_heights = c(0.95,1,1))
-ggsave(file="../figures/fig2_TFBS.pdf", p_all, width =162.5*0.9, height=160, units = "mm")
-ggsave(file="../figures/fig2_TFBS2.pdf", p_all, width =162.5*0.87, height=160, units = "mm")
+ggsave(file="../figures/fig2_TFBS_pred.pdf", p_all, width =162.5, height=160, units = "mm")
 
 ```
-
-
 

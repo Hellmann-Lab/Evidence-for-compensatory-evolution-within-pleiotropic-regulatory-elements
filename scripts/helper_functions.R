@@ -360,6 +360,17 @@ analysePhastCons <- function( bigWigFile, gr, probcut=0.9){
 
 }
 
+# analysePhyloP <- function( bigWigFile, gr){
+#   phyloP  <- rtracklayer::import(bigWigFile, 
+#                                  which= gr,
+#                                  as="NumericList")
+#   sumP<- sapply(phyloP, function(x){ 
+#     c(length(x), max(x), sum(x>=1.3) )
+#   }) %>% t() %>% data.frame()
+#   
+#   names(sumP)<- c("bp","maxPhyloP","consPhylo")
+#   gr %>% as_tibble() %>% bind_cols(sumP)
+# }
 
 analysePhyloP <- function( bigWigFile, gr, consCutoff = 1){
   phyloP  <- rtracklayer::import(bigWigFile, 
@@ -482,3 +493,13 @@ make_permut_plots<- function( permout, title=""){
   
 }
 
+
+
+
+# Calculate tree branch length based on included species
+
+calculate_tree_length<-function(df, regid, regid_column = region_id, tree){
+  vec_sp<-df %>% filter({{regid_column}}==regid) %>% pull(., latin)
+  reduced_tree<-ape::drop.tip(tree, tree$tip.label[!tree$tip.label %in% vec_sp])
+  return(sum(reduced_tree$edge.length))
+}

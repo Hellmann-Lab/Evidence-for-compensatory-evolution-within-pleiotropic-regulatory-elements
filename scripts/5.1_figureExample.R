@@ -53,7 +53,7 @@ gene_to_symbol <- rtracklayer::import("gtf/gencode.v19.annotation.gtf.gz") %>%
 
 
 # expression
-exprdds <- readRDS("RNAseq/RDS/dds_clean.rds")
+exprdds <- readRDS("expression_conservation/RDS/dds_clean.rds")
 DE<-lapply( c("NPC"), function(i){
   tmp <- colData(exprdds)
   tmp <- tmp[tmp$Differentiation == i,]

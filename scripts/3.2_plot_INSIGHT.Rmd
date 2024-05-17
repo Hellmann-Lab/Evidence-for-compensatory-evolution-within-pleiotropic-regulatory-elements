@@ -104,6 +104,13 @@ insight_tissues_long<-results %>%
   tidyr::separate(dataID,c("sp","tissue"), sep="_", extra="merge") %>%
   pivot_longer_insight()
 
+combined<-bind_rows(insight_region_long,insight_tissues_long) %>%
+  filter( selection_type != 'E.A.') %>%
+  mutate(longLab = case_when( selection_type == 'E.W.' ~ "Weak negative selection (E.W.):",
+                              selection_type == 'rho'  ~ "All~negative~selection~symbol('(')*rho*symbol(')')*symbol(':')"),
+         region = ifelse( region == "enh", "Enhancer", "Promoter"),
+         tissue = gsub("_", " ", tissue))
+
 ```
 
 ### Brain and thymus peaks
@@ -129,7 +136,6 @@ insight_peaks_long<-bind_rows(insight_tissues_long %>%
 # First main
 
 ```{r first}
-
 
 basic_theme_ins2<-  theme(axis.title=element_text(size=9),
                          axis.text = element_text(color="black", size=8),
@@ -162,8 +168,8 @@ for (reg in c("DA","nonDA")){
 insight_DA1_long<-results %>%
   tidyr::separate(dataID,c("sp","DA"), sep="_", extra="merge") %>%
   pivot_longer_insight() %>%
-  filter( selection_type != 'E.A.') %>%
-  mutate(longLab = case_when( selection_type == 'E.W.' ~ "Cross-species accessibility",
+  dplyr::filter( selection_type != 'E.A.') %>%
+  dplyr::mutate(longLab = case_when( selection_type == 'E.W.' ~ "Cross-species accessibility",
                               selection_type == 'rho'  ~ "Cross-species accessibility"),
          DA= ifelse(DA=="DA","Not conserved", "Conserved"))
 
@@ -244,7 +250,6 @@ pReg1<-ggplot(combined %>% filter(selection_type=="E.W.", !is.na(region)),
         axis.title.x = element_blank(),
         axis.text.x = element_blank(),
         axis.ticks.x = element_blank())
-
 
 
 pReg2<-ggplot(combined %>% filter(selection_type=="rho", !is.na(region)),

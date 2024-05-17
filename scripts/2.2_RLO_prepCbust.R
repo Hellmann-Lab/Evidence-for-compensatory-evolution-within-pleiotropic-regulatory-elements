@@ -20,7 +20,7 @@ library(BSgenome.Hsapiens.NCBI.GRCh38)
 # count reads falling in these
 
 
-#setwd("/data/share/htp/pleiotropy/paper_data/")
+setwd("/data/share/htp/pleiotropy/paper_data/")
 source("ATACseq/scripts/functions.R")
 source("ATACseq/scripts/helper_functions.R")
 workdir<-"/data/share/htp/pleiotropy/paper_data/"
@@ -33,15 +33,15 @@ jamm_region_identifiers<-readRDS("roadmap_DHS_summaries/region_summary/jamm_regi
 
 # RECIPROCAL LIFTOVER -----------------------------------------------------
 
-jamm_hg38_noExt<-translate_jamm(chain_file = "macFas6_liftOver_chains/hg19ToHg38.over.chain",
+jamm_hg38_noExt<-translate_jamm(chain_file = "liftOvers/hg19ToHg38.over.chain",
                                 coordinate_file = as_granges(jamm_region_identifiers), 
                                 extend = 20,
-                                reverse_chain_file = "macFas6_liftOver_chains/hg38ToHg19.over.chain")
+                                reverse_chain_file = "liftOvers/hg38ToHg19.over.chain")
 
-jamm_macfas6_noExt<-translate_jamm(chain_file = "macFas6_liftOver_chains/hg38ToMacFas6.over.chain", 
+jamm_macfas6_noExt<-translate_jamm(chain_file = "liftOvers/hg38ToMacFas6.over.chain", 
                                    coordinate_file = as_granges(jamm_hg38_noExt), 
                                    extend = 20,
-                                   reverse_chain_file = "macFas6_liftOver_chains/macFas6ToHg38.over.chain")
+                                   reverse_chain_file = "liftOvers/macFas6ToHg38.over.chain")
 
 
 #save both as bed files
@@ -62,7 +62,6 @@ system("ATACseq/scripts/count_table.sh")
 
 
 # GET SEQUENCES -----------------------------------------------------------
-
 
 # first, prepare data for cbust: need to save the sequences and the PWMs
 # SAVE SEQUENCES
@@ -116,7 +115,6 @@ writeFasta4cbust(gr = coords_hum_gr,
 
 # SANITY CHECKS -----------------------------------------------------------
 
-
 # quantify width differences and Ns  
 upper=1.2
 lower=0.8
@@ -136,7 +134,6 @@ hg38_Ns<-get_Ns("hg38")
 
 
 # GC AND CGI --------------------------------------------------------------
-
 
 # MACAQUE
 seq_mac<-data.frame(region_id = coords_mac_gr$region_id,
@@ -160,7 +157,6 @@ seq_hum<-data.frame(region_id = coords_hum_gr$region_id,
 
 
 # COMBINE AND SAVE --------------------------------------------------------
-
 
 jamm_inATAC<-inner_join(as_tibble(coords_hum_gr),
                         as_tibble(coords_mac_gr),
@@ -210,7 +206,7 @@ jaspar_ic_df <- jaspar_ic %>%
 
 # expressed TFs in iPSC-NPC dataset ####
 
-cnts<-readRDS("RNAseq/RDS/cnt_clean.rds")
+cnts<-readRDS("expression_conservation/RDS/cnt_clean.rds")
 
 gene_to_symbol <- gtf %>% S4Vectors::mcols() %>% data.frame() %>% 
   dplyr::select(gene_id, gene_name) %>% distinct() %>% 
@@ -261,7 +257,7 @@ saveRDS(family, "ATACseq/cbust/TF_family.rds")
 
 # expressed in NPCs ####
 
-exprdds <- readRDS("RNAseq/RDS/dds_clean.rds")
+exprdds <- readRDS("expression_conservation/RDS/dds_clean.rds")
 tmp <- colData(exprdds)
 tmp <- tmp[tmp$Differentiation == "NPC",]
 countData = DESeq2::counts(exprdds)[,rownames(tmp)]

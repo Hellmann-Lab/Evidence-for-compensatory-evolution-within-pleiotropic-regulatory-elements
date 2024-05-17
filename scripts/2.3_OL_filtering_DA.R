@@ -15,7 +15,7 @@ library(patchwork)
 
 
 
-#setwd("/data/share/htp/pleiotropy/paper_data/")
+setwd("/data/share/htp/pleiotropy/paper_data/")
 source("ATACseq/scripts/functions.R")
 source("ATACseq/scripts/helper_functions.R")
 
@@ -36,7 +36,7 @@ jamm_gr<-readRDS("roadmap_DHS_summaries/region_summary/jamm_region_info_full.rds
 
 # keep only similar length and N-free sequences 
 jamm_inATAC<-readRDS("ATACseq/RDS/jamm_inATAC.rds") %>% 
-  filter(similar_width=="yes", Ns_hg38==0, Ns_macFas6==0)
+  filter(region_id %in% jamm_gr$region_id, similar_width=="yes", Ns_hg38==0, Ns_macFas6==0) 
 
 
 
@@ -65,6 +65,10 @@ OL_jamm_ATAC_hg38<-calc_OL(hg38_jamm,
                 OneToOne.hum = OneToOne) %>%
   dplyr::select(-n_Ind1ToInd2,-n_Ind2ToInd1)
 
+# a good proportion (72%) of human NPC peaks are present in DHS
+length(hg38_peaks_NPC)
+length(unique(OL_jamm_ATAC_hg38$peak_id.hum))/length(unique(hg38_peaks_NPC$peak_id.hum))
+length(unique(OL_jamm_ATAC_hg38$region_id))/length(unique(hg38_jamm$region_id))
 
 
 
@@ -72,7 +76,6 @@ OL_jamm_ATAC_hg38<-calc_OL(hg38_jamm,
 
 
 # Macaque peaks vs DHS ----------------------------------------------------
-
 
 path_mac<-"/data/share/htp/ATACseq/Novogene_ATAC/02_Preprocessing/bwa_mapping/bwa_cleaning/05_peaks/genrich/"
 mac6_peaks_NPC<-read_narrowpeaks(paste0(path_mac,"ATAC_b1_sample07_macFas6.bam.narrowPeak")) %>%
@@ -95,12 +98,16 @@ OL_jamm_ATAC_mac6<-calc_OL(mac6_jamm,
                 OneToOne.mac = OneToOne) %>%
   dplyr::select(-n_Ind1ToInd2,-n_Ind2ToInd1)
 
+# a good proportion (68%) of macaque NPC peaks are present in human DHS
+length(mac6_peaks_NPC)
+length(unique(OL_jamm_ATAC_mac6$peak_id.mac))/length(unique(mac6_peaks_NPC$peak_id.mac))
+length(unique(OL_jamm_ATAC_mac6$region_id))/length(unique(mac6_jamm$region_id))
+
 
 
 
 
 # Multimatches ------------------------------------------------------------
-
 
 # We want to exclude cases with multimatches and require that in a case of 1-to-1 overlap, also the human and macaque NPC peaks need to overlap to at least 10%
 
@@ -134,20 +141,23 @@ jamm_forATAC_NPC_all<-jamm_inATAC %>%
                distinct(region_id = as.factor(region_id), assignment, total, CGI)) %>%
   dplyr::select(region_id, assignment, total, CGI) %>% 
   dplyr::mutate(OL.hum = ifelse(region_id %in% OL_jamm_ATAC_hg38$region_id, T, F),
-         OL.mac = ifelse(region_id %in% OL_jamm_ATAC_mac6$region_id, T, F),
-         openness = case_when(OL.hum & OL.mac ~ "Always open",
-                              !OL.hum & !OL.mac ~ "Not open",
-                              !OL.hum & OL.mac ~ "Macaque-only",
-                              OL.hum & !OL.mac ~ "Human-only"))
+                OL.mac = ifelse(region_id %in% OL_jamm_ATAC_mac6$region_id, T, F),
+                openness = case_when(OL.hum & OL.mac ~ "Always open",
+                                     !OL.hum & !OL.mac ~ "Not open",
+                                     !OL.hum & OL.mac ~ "Macaque-only",
+                                     OL.hum & !OL.mac ~ "Human-only"))
 
 saveRDS(jamm_forATAC_NPC_all, "ATACseq/RDS/jammPeaks_vs_ATACPeaks_NPC_all.rds")
 
 
 
-# EXCLUDE MISMATCHES
+# EXCLUDE MULTIMATCHES
 jamm_forATAC_NPC<-jamm_inATAC %>%
+  #loose 550 genes due to this step
   inner_join(readRDS("CRE_to_Gene/DHS_to_gene.rds") %>% 
                distinct(region_id = as.factor(region_id), assignment, total, CGI)) %>%
+  #inner_join(readRDS("../expression_conservation/Data/DGE_PD/DHS_to_gene_expr.rds") %>%
+  #             distinct(region_id = as.factor(region_id), assignment, total, CGI)) %>% 
   dplyr::select(region_id, assignment, total, CGI) %>% 
   filter(!region_id %in% multimatches$region_id) %>%
   left_join(OL_jamm_ATAC_hg38 %>% 
@@ -170,7 +180,6 @@ jamm_forATAC_NPC %>% pivot_longer(contains("fracOverlap")) %>% ggplot(aes(x=valu
 
 # Peak - peak OLs ---------------------------------------------------------
 
-
 # how many of these overlap between human and mac peak? Liftover human peaks, that had any overlaps with DHS, to macaque genome 
 
 coord_hummatches<-hg38_peaks_NPC %>% as_tibble() %>% 
@@ -178,10 +187,10 @@ coord_hummatches<-hg38_peaks_NPC %>% as_tibble() %>%
   filter(peak_id.hum %in% jamm_forATAC_NPC$peak_id.hum[jamm_forATAC_NPC$openness=="Always open"]) %>% 
   as_granges()
 
-humNPC_onMacfas6<-translate_jamm(chain_file = "macFas6_liftOver_chains/hg38ToMacFas6.over.chain", 
+humNPC_onMacfas6<-translate_jamm(chain_file = "liftOvers/hg38ToMacFas6.over.chain", 
                                  coordinate_file = coord_hummatches, 
                                  extend = 50,
-                                 reverse_chain_file = "macFas6_liftOver_chains/macFas6ToHg38.over.chain") %>%
+                                 reverse_chain_file = "liftOvers/macFas6ToHg38.over.chain") %>%
   as_tibble() %>% mutate(seqnames = gsub("chr", "", seqnames), peak_id.hum=region_id)
 
 
