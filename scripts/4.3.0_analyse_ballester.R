@@ -16,6 +16,9 @@ source("scripts/helper_functions.R")
 source("ATACseq/scripts/functions.R")
 source("ATACseq/scripts/helper_functions.R")
 
+specificityColors <- c( "#A3753B", "#CC9B57", "#E7CF97", "#F8EDD0", "#F7F7F7", "#D2EEEA", "#99D7CE", "#5DACA5", "#33847E")
+names(specificityColors) <-  c(1:9)
+
 basic_theme_ins2<-  theme(axis.title=element_text(size=8),
                           axis.text = element_text(color="black", size=7),
                           legend.title = element_text(size = 7.3), 
@@ -45,7 +48,7 @@ basic_theme_ins2<-  theme(axis.title=element_text(size=8),
 hummac<-readRDS("Roller2021/chipseq_OL_humJamm_mac_collapsed.rds") %>% 
   dplyr::select(region_id, collapsed_region_id) %>% 
   left_join(readRDS("Roller2021/chipseq_macregs_collapsed.rds")) %>% 
-  right_join(readRDS("roadmap_DHS_summaries/region_summary/jamm_region_info_full.rds") %>%
+  right_join(readRDS("general/region_summary/jamm_region_info_full.rds") %>%
               dplyr::select(region_id, total))
 
 
@@ -115,8 +118,8 @@ saveRDS(liverPD_TFBS, "Ballester2014/summarized_PD1_PD9_TFBS_mmul10.rds")
 
 
 pProps<-ggplot(liverPD_TFBS %>% 
-                 mutate(PD = ifelse(type=="pleiotropic","9","1")),
-               aes(x = PD, fill = as.factor(n_TFspecies)))+
+                 mutate(type = ifelse(type=='liver-specific','liver-\nspecific', type)),  #PD = ifelse(type=="pleiotropic","9","1")),
+               aes(x = type, fill = as.factor(n_TFspecies)))+
   geom_bar(position="fill")+
   theme_bw()+
   scale_fill_manual(values=c("1" = "#ffcdb2",
@@ -125,7 +128,7 @@ pProps<-ggplot(liverPD_TFBS %>%
                              "4" = "#b5838d",
                              "5" = "#6d6875"),
                     name="# of species\nwith conserved\nTF repertoire")+
-  xlab("PD") +
+  xlab("CREs") +
   ylab("Fraction")+
   basic_theme_ins2+
   theme(axis.text = element_text(color="black"))
@@ -200,19 +203,7 @@ treeLengthsBallester<-liverPD_TFBS_long %>%
 saveRDS(treeLengthsBallester, "Ballester2014/PhyloTreeLengths.rds")
 
 
-# plot
-ggplot(treeLengthsBallester %>% 
-         mutate(PD = ifelse(type=="pleiotropic","9","1")), 
-       aes(x=PD, y=rel_tree_length, fill=PD))+
-  geom_boxplot(notch = T, width=0.6)+
-  theme_bw()+
-  xlab("PD")+
-  ylab(expression(paste("TF repertoire age (relative ", lambda, ")")))+
-  scale_fill_manual(values=c(specificityColors[[1]],specificityColors[[9]]))+
-  theme(legend.position = "none",
-        axis.text = element_text(color="black"))
 
-ggsave("Roller2021/figures/ballester_evoAge.png", height=3, width=4)
 
 
 wilcox.test(
@@ -233,13 +224,14 @@ p_age_all<-treeLengthsBallester %>%
   group_by(type) %>% 
   summarize(mean = mean(rel_tree_length),
             sem = sd(rel_tree_length)/sqrt(length(type))) %>% 
-  dplyr::mutate(#TF = factor(TF, levels=c("CEBPA","FOXA1","HNF4A","HNF6","CRM")),
-                PD = ifelse(type=="pleiotropic","9","1")) %>% 
-  ggplot(aes(x=PD, y=mean, color=PD))+
+ # dplyr::mutate(#TF = factor(TF, levels=c("CEBPA","FOXA1","HNF4A","HNF6","CRM")),
+ #               PD = ifelse(type=="pleiotropic","9","1")) %>% 
+  mutate(type = ifelse(type=='liver-specific','liver-\nspecific', type)) %>% 
+  ggplot(aes(x=type, y=mean, color=type))+
   geom_point()+
   geom_errorbar(aes(ymin = mean-sem, ymax=mean+sem), width=0.2)+
   theme_bw()+
-  xlab("PD")+
+  xlab("CREs")+
   ylab(expression(paste("TF binding conservation (", lambda[i] / lambda, ")")))+
   scale_color_manual(values=c(specificityColors[[1]],specificityColors[[9]]))+
   basic_theme_ins2+
@@ -254,12 +246,13 @@ pTFage<-treeLengthsBallester %>%
   summarize(mean = mean(rel_tree_length),
             sem = sd(rel_tree_length)/sqrt(length(type))) %>% 
   dplyr::mutate(TF = factor(TF, levels=c("CEBPA","FOXA1","HNF4A","HNF6","CRM")),
-                PD = ifelse(type=="pleiotropic","9","1")) %>% 
-  ggplot(aes(x=PD, y=mean, color=PD))+
+                type = ifelse(type=='liver-specific','liver-\nspecific', type)) %>% #,
+               # PD = ifelse(type=="pleiotropic","9","1")) %>% 
+  ggplot(aes(x=type, y=mean, color=type))+
   geom_point()+
   geom_errorbar(aes(ymin = mean-sem, ymax=mean+sem), width=0.2)+
   theme_bw()+
-  xlab("PD")+
+  xlab("CREs")+
   ylab(expression(paste("TF binding conservation (", lambda[i] / lambda, ")")))+
   scale_color_manual(values=c(specificityColors[[1]],specificityColors[[9]]))+
   basic_theme_ins2+

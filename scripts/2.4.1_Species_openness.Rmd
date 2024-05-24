@@ -10,7 +10,7 @@ editor_options:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 library(ggplot2)
-libs<-c("ggplot2","ggpubr","RMySQL","tidyverse","cowplot","data.table","GenomicRanges", "patchwork", "broom", "DESeq2", "figpatch")
+libs<-c("ggplot2","ggpubr","RMySQL","tidyverse","cowplot","data.table","GenomicRanges", "patchwork", "broom", "DESeq2", "figpatch", "ape", "ggtree")
 
 sapply(libs, require, character.only=T)
 source("../ATACseq/scripts/TFBS_plotting_functions_ATAC.R")
@@ -23,6 +23,9 @@ names(specificityColors) <-  c(1:9)
 
 regionColors2 <- c("#9CA578","#3288BD","#E37063")
 names(regionColors2) <-  c("Enhancer", "Promoter","Expression")
+
+regionColors <- c("#9CA578","#3288BD","#E37063")
+names(regionColors) <-  c("Enhancer", "Promoter","Expression")
 
 basic_theme<-  theme(axis.title=element_text(size=8.5),
         axis.text = element_text(color="black", size=7),
@@ -47,6 +50,19 @@ basic_theme_ins<-  theme(axis.title=element_text(size=9.5),
                      panel.grid.major = element_line(size = 0.35),
                      panel.grid.minor = element_blank(),
                      strip.text.x = element_text(size = 10))
+
+basic_theme_ins2<-  theme(axis.title=element_text(size=8),
+                         axis.text = element_text(color="black", size=7),
+                         legend.title = element_text(size = 7.3), 
+                         legend.text = element_text(size = 7),
+                         legend.key.size = unit(0.5, "lines"),
+                         legend.margin=margin(0,0,0,0),
+                         legend.box.margin=margin(0,0,0,0),
+                         legend.background = element_blank(), 
+                         legend.box.background = element_blank(),
+                         panel.grid.major = element_line(size = 0.35),
+                         panel.grid.minor = element_blank(),
+                         strip.text = element_text(size = 8))
 
 
 theme_ines<-theme_bw( base_size = 8 ) +
@@ -144,7 +160,7 @@ DA<-lapply( c("NPC","iPSC"), function(i){
       inner_join(DHS_to_gene)
 }) %>% bind_rows
 
-exprdds <- readRDS("../expression_conservation/RDS/dds_clean.rds")
+exprdds <- readRDS("../RNAseq/RDS/dds_clean.rds")
 DE<-lapply( c("NPC","iPSC"), function(i){
   tmp <- colData(exprdds)
   tmp <- tmp[tmp$Differentiation == i,]
@@ -159,7 +175,7 @@ DE<-lapply( c("NPC","iPSC"), function(i){
 
 comb.lfc<- DE %>% left_join(DA, by=c("gene_id","celltype"), suffix=c("",".da"))
 
-saveRDS(comb.lfc, "../expression_conservation/RDS/DE_DA_table.rds")
+saveRDS(comb.lfc, "../RNAseq/RDS/DE_DA_table.rds")
 
 expr_pleio<- readRDS("../roadmap_expression_summaries/summarized_expression_allTissues.rds") %>% 
   group_by(gene_id) %>% 
@@ -220,7 +236,7 @@ lfc_npc_summary<-LFC_sum %>% mutate(PD = as.numeric(PD),
   ylab(expression(paste("|",log[2](frac(a[H], a[M])),"|"))) +
   scale_color_manual(values = regionColors2)+
   basic_theme_ins2+
-  theme(legend.position = c(0.8,0.83), legend.title=element_blank())
+  theme(legend.position = c(0.8,0.91), legend.title=element_blank())
 
 
 level_npc_summary<-LFC_sum %>% mutate(PD = as.numeric(PD),
@@ -242,53 +258,52 @@ level_npc_summary<-LFC_sum %>% mutate(PD = as.numeric(PD),
 
 ```{r cor}
 
-enrichTest2<- comb.lfc %>% 
+ft<- comb.lfc %>% 
   filter(region_id %in% jamm_forATAC_NPC_all$region_id[jamm_forATAC_NPC_all$openness!="Not open"]) %>%
-  group_by( total, celltype) %>% 
-  summarise(DE_DA = sum(padj<=0.1 & padj.da<=0.1,na.rm=T),
-            DE_notDA = sum(padj<=0.1 & padj.da>0.1,na.rm=T),
-            notDE_DA = sum(padj>0.1 & padj.da<=0.1,na.rm=T),
-            notDE_notDA = sum(padj>0.1 & padj.da>0.1,na.rm=T)) %>% 
-  pivot_longer(DE_DA:notDE_notDA, names_to = "cnt_type", values_to = "cnt" ) %>% 
-  group_by( total, celltype) %>% 
-  mutate( broom::tidy(fisher.test( matrix(cnt,2,2)))) %>% 
-  pivot_wider(names_from = cnt_type,values_from = "cnt") %>% 
-  drop_na() %>% ungroup %>% 
-  mutate( PD  = factor(total), 
-         #type = ifelse(assignment == "enh","Enhancer","Promoter"),
-         padj = p.adjust(p.value, method = "BH"),
-         sig.code = case_when( padj <= 1e-3 ~ "****",
-                               padj <= 1e-2 ~ "***",
-                               padj <= 0.05 ~ "**",
-                               padj <= 0.1 ~ "*",
-                               T ~ "")) 
-  
-enrichTest2$padj <- p.adjust(enrichTest2$p.value, method = "BH")
+  group_by(celltype, assignment, gene_id, total) %>% 
+  summarise(DE = sum(abs(log2FoldChange)>=1, padj<=0.1,na.rm=T)>0,
+            DA = sum(padj.da<=0.1,na.rm=T),
+            lfc = max(abs(log2FoldChange)),
+            lfc.da.sum = sum(abs(log2FoldChange.da)),
+            lfc.da.max = max(abs(log2FoldChange.da)),
+            n=length(total)) %>% 
+  group_by(gene_id,celltype,assignment) %>% 
+  mutate( hasDA_prom = sum( assignment == "prom" & DA>0)>0,
+          hasDA_enh  = sum( assignment == "enh"  & DA>0)>0,
+          hasDA_PD9_prom = sum( assignment == "prom"  & DA>0 & total==9)>0,
+          hasDA_PD9_enh  = sum( assignment == "enh"  & DA>0 & total==9)>0,
+          hasDA_PDM_prom    = sum( assignment == "prom"  & DA>0 & total>1 & total<9)>0,
+          hasDA_PDM_enh    = sum( assignment == "enh"  & DA>0 & total>1 & total<9)>0,
+          hasDA_PD1_prom    = sum( assignment == "prom"  & DA>0 & total==1 )>0,
+          hasDA_PD1_enh    = sum( assignment == "enh"  & DA>0 & total==1 )>0)
 
-enrichTest2_NPC_plot_together<-enrichTest2  %>% 
-  filter(celltype == "NPC") %>% 
-  ggplot(aes(x=PD, y=estimate,
-             ymin=conf.low, 
-             ymax=conf.high, 
-             label=sig.code)) +
-  geom_hline(yintercept = 1,linetype=2, color="darkgrey")+
-  geom_pointrange(size=0.3, color="grey30")+ 
-  geom_text(aes(y=estimate+0.2),
-            size=3, position = position_dodge(width=0.5))+
-  ylab("Odds Ratio (DA vs. DE)")+
-  scale_y_log10() 
+x<-ft %>% filter(celltype == "NPC",hasDA_enh==F)
+cor.test(x$lfc.da.max,x$lfc, 
+         method = "spearman")
+
+# are DE genes enriched if a gene has at least one DA promoter
+ft %>% ungroup %>% filter(celltype =="NPC" , hasDA_enh==F) %>% 
+  distinct(gene_id,DE,hasDA_prom) %>% 
+  dplyr::count(DE,hasDA_prom) %>% 
+  summarise( broom::tidy(fisher.test( matrix(n,2,2))))
+
+
+# are DE genes enriched if a gene has at least one DA enhancer
+ft %>% ungroup %>% filter(celltype =="NPC" , hasDA_prom==F) %>% 
+  distinct(gene_id,DE,hasDA_enh) %>% 
+  dplyr::count(DE,hasDA_enh) %>% 
+  summarise( broom::tidy(fisher.test( matrix(n,2,2))))
 
 ```
 
 
 ```{r matchedF}
 
-
 df<- comb.lfc %>% 
   filter(celltype == "NPC",
          region_id %in% jamm_forATAC_NPC_all$region_id[jamm_forATAC_NPC_all$openness!="Not open"]) %>% 
   mutate(DA = ifelse(padj.da<0.1, 1, 0),
-         DE = ifelse(padj<0.1, 1, 0),
+         DE = ifelse(padj<0.1 & abs(log2FoldChange)>1, 1, 0),
          DE = ifelse(is.na(DE),0, DE),
          PD_cat = case_when(total %in% c(1) ~ "specific",
                             total %in% c(9) ~ "pleiotropic",
@@ -299,6 +314,11 @@ gene_profiles<-df %>%
   dplyr::summarise(nn = length(gene_id)) %>% 
   pivot_wider(names_from = c(PD_cat, assignment, DA), values_from = nn) %>% 
   replace(is.na(.), 0) 
+
+```
+
+
+```{r evalnot, eval=F}
 
 # running this takes a while, you can just also load it below line 373
 fisher_list<-list()
@@ -361,14 +381,15 @@ fishers_table<-bind_rows(fisher_list, .id="combi") %>%
   mutate( PD  = factor(total), 
           type = ifelse(assignment == "enh","Enhancer","Promoter"),
           padj = p.adjust(p.value, method = "BH"),
-          sig.code = case_when( padj <= 1e-3 ~ "****",
-                                padj <= 1e-2 ~ "***",
-                                padj <= 0.05 ~ "**",
-                                padj <= 0.1 ~ "*",
+          sig.code = case_when( padj <= 1e-3 ~ "***",
+                                padj <= 1e-2 ~ "**",
+                                padj <= 0.05 ~ "*",
                                 T ~ "")) 
 
 saveRDS(fishers_table, "ATACseq/RDS/DA_DE_tables/matched_fishers_table_1M9.rds")
+```
 
+```{r run}
 # Matched fishers table
 fishers_table<-readRDS("../ATACseq/RDS/DA_DE_tables/matched_fishers_table_1M9.rds")
 
@@ -384,16 +405,17 @@ fig3_fishtab<-fishers_table  %>%
              color=type)) +
   geom_hline(yintercept = 1,linetype=2, color="darkgrey")+
   geom_pointrange(position=position_dodge(width=0.5), size=0.3)+ 
-  geom_text(aes(y=estimate+0.5),
+  geom_text(aes(y=conf.high+0.5),
             size=3, position = position_dodge(width=0.5))+
   ylab("Odds Ratio (DA vs. DE)")+
   scale_y_log10()+
   scale_color_manual(values=regionColors)+
   basic_theme_ins2+
   theme(axis.text = element_text(color="black"),
-        legend.position=c(0.8, 0.15),
+        legend.position=c(0.18, 0.91),
         legend.title = element_blank())+
   xlab("Grouped PD")
+
 
 ```
 
@@ -401,6 +423,7 @@ fig3_fishtab<-fishers_table  %>%
 ### New figure 3
 
 ```{r roller}
+
 treeLengths<-readRDS("../Roller2021/PhyloTreeLengths.rds")
 
 evoage<-ggplot(treeLengths, aes(x=as.factor(total), y=rel_tree_length, fill=as.factor(total)))+
@@ -442,7 +465,7 @@ mamtree<-ggtree(speciesTree_plot, lwd=0.3)+
 ```{r new3}
 
 # Construct plot 3
-fig2A<-fig("../figures/npc_peaks_pleio_base.png", 
+fig2A<-fig("../figures/npc_peaks_pleio_base.pdf", 
             b_margin = ggplot2::margin(-10,0,-10,-10), link_dim = T)+
   theme(plot.margin = margin(0,0,0,0))
 
@@ -453,7 +476,7 @@ fig3_top<-plot_grid(fig2A+theme(axis.text = element_text(color="black")),
 
 fig3_middle<-plot_grid(mamtree,evoage, rel_widths = c(1,1.3), scale = c(0.8, 1), labels=c("C","D"), label_size=12, label_x = c(0,-0.05))
 
-fig3_bottom<-plot_grid(lfc_npc_summary+theme(legend.position=c(0.75,0.82)),
+fig3_bottom<-plot_grid(lfc_npc_summary+theme(legend.position=c(0.75,0.87)),
                        NULL, fig3_fishtab, ncol=3, rel_widths=c(1.1,0.1,1),
                        labels=c("E","F"), label_size=12, label_x = c(0,0))
                 
@@ -481,7 +504,7 @@ topVarMat <- vsdMat2[topVar, ]
 
 # Plot heatmap
 ann_colors = list(
-  species = c("human"="#8B8BA7","macaque"="#D1D1DC")
+  species = c("Human"="#8B8BA7","Macaque"="#D1D1DC")
 )
 
 library(pheatmap)
@@ -490,7 +513,7 @@ pheatmap(topVarMat,
          cluster_rows = TRUE,
          show_rownames = FALSE,
          show_colnames = FALSE,
-         annotation_col = dplyr::transmute(as.data.frame(colData(atacDDS)[grepl("NPC", rownames(colData(atacDDS))),]), species=ifelse(species=="cynomolgus", "macaque", "human")),
+         annotation_col = dplyr::transmute(as.data.frame(colData(atacDDS)[grepl("NPC", rownames(colData(atacDDS))),]), species=ifelse(species=="cynomolgus", "Macaque", "Human")),
          annotation_colors=ann_colors,
          cutree_rows = 1,
          cutree_cols = 1,
@@ -508,11 +531,10 @@ topVarMat <- vsdMat2[topVar, ]
 
 pdf("../figures/DE_heatmap.pdf", height = 4.5, width = 5)
 pheatmap(topVarMat,
-         #color = heat_colors,
          cluster_rows = TRUE,
          show_rownames = FALSE,
          show_colnames = FALSE,
-         annotation_col = dplyr::transmute(as.data.frame(colData(exprdds)[grepl("d5|d7|d9", rownames(colData(exprdds))),]), species=ifelse(Species=="macFas", "macaque", "human")),
+         annotation_col = dplyr::transmute(as.data.frame(colData(exprdds)[grepl("d5|d7|d9", rownames(colData(exprdds))),]), species=ifelse(Species=="macFas", "Macaque", "Human")),
          annotation_colors=ann_colors,
          cutree_rows = 1,
          cutree_cols = 1,
@@ -523,45 +545,21 @@ dev.off()
 
 
 
-## Cluster human NPC samples within tissue samples based on peaks
+## Count the number of overlapping peaks
 
 ```{r peak_clusters}
 
-jamm_DNase_binary<-readRDS("../roadmap_DHS_summaries/region_summary/jamm_region_info_full.rds") %>%
-  dplyr::select(region_id, adrenal_gland, brain, heart, kidney, large_intestine, lung, muscle, stomach, thymus, total) %>% 
-  right_join(jamm_region_info_full %>% dplyr::select(region_id))
-  
-hum<-stringent_set %>% filter(openness %in% c("Human-specific","Conserved")) %>%
-  pull(region_id)
-
-mac<-stringent_set %>% filter(openness %in% c("Macaque-specific","Conserved")) %>%
-  pull(region_id)
-
-tissues_NPC_peaks<-jamm_DNase_binary %>%
-  filter(total!=9) %>%
-  dplyr::select(-total) %>%
-  dplyr::mutate(`human NPCs` = ifelse(region_id %in% hum, 1, 0),
-                `macaque NPCs` = ifelse(region_id %in% mac, 1, 0)) %>%
-  column_to_rownames("region_id") 
-
-
-colnames(tissues_NPC_peaks)<-gsub("_"," ", colnames(tissues_NPC_peaks))
-mat<-t(as.matrix(tissues_NPC_peaks))
-
-## Dendrogram
-
-#method: binary: The vectors are regarded as binary bits, so non-zero elements are ‘on’ and zero elements are ‘off’. The distance is the proportion of bits in which only one is on amongst those in which at least one is on, i.e. (union - intersect)/union
-
-dist_mat <- dist(mat, method = 'binary')
-hclust_avg <- hclust(dist_mat, method = 'complete')
-pdf("../figures/dendro_NPCs.pdf", height = 4, width = 5)
-plot(hclust_avg, cex=0.8)
-dev.off()
-
-
-dendro<- ggdraw() + 
-  cowplot::draw_image(magick::image_read_pdf("../figures/dendro_NPCs_crop.pdf"))+
-  theme(plot.margin = unit(c(0, 0,0,0), "cm"))
+peakOL_plot_machum_NPCs <- stringent_set %>% 
+  mutate(assignment = ifelse(assignment == "enh","Enhancer","Promoter")) %>% 
+  filter(openness %in% c("Conserved","Macaque-specific","Human-specific")) %>% 
+  group_by(assignment, total, openness) %>% 
+  dplyr::summarise(n=length(total)) %>%
+  ggplot(aes(x=as.factor(total), y=n, fill=openness))+
+  geom_col()+#position=position_dodge())+
+  scale_fill_manual(values=c("Macaque-specific"="#D1D1DC","Human-specific"="#8B8BA7","Conserved"="#69698C")) +
+  facet_grid(.~assignment)+
+  ylab("Fraction of CREs")+
+  xlab("PD")
 
 
 sup2A<-fig("../figures/DA_heatmap.pdf", b_margin = ggplot2::margin(-10,0,-10,-10), 
@@ -573,15 +571,13 @@ sup2B<-fig("../figures/DE_heatmap.pdf", b_margin = ggplot2::margin(-10,0,-10,-10
 
 plot_grid(
   plot_grid(sup2A, sup2B, labels=c("A","B"), label_size=12),
-  dendro, 
-  #NULL,
-  plot_grid(NULL,enrichTest2_NPC_plot_together +theme(axis.text=element_text(color="black")),
+  plot_grid(NULL,peakOL_plot_machum_NPCs +theme(axis.text=element_text(color="black")),
             NULL, scale = 0.95,
-            #labels = c("C","",""), label_size = 12, 
-            rel_widths=c(0.25,1,0.25), ncol = 3),
-  ncol=1, rel_heights=c(1.1,0.6,0.6), labels = c("","C","D"), label_size =12)
+            rel_widths=c(0.05,1,0.05), ncol = 3),
+  ncol=1, rel_heights=c(1.1,0.7), labels = c("","C"), label_size =12)
 
-ggsave("../figures/SuplFig2_combined_withDendro_new.pdf", height = 7, width = 5)
+ggsave("../figures/SuplFig2.pdf", height = 7*0.7, width = 5)
+
 
 ```
 
