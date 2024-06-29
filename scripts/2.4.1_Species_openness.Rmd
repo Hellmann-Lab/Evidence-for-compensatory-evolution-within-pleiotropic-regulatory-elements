@@ -406,7 +406,7 @@ fig3_fishtab<-fishers_table  %>%
   geom_hline(yintercept = 1,linetype=2, color="darkgrey")+
   geom_pointrange(position=position_dodge(width=0.5), size=0.3)+ 
   geom_text(aes(y=conf.high+0.5),
-            size=3, position = position_dodge(width=0.5))+
+            size=3, position = position_dodge(width=0.5), show.legend=FALSE)+
   ylab("Odds Ratio (DA vs. DE)")+
   scale_y_log10()+
   scale_color_manual(values=regionColors)+
@@ -415,7 +415,6 @@ fig3_fishtab<-fishers_table  %>%
         legend.position=c(0.18, 0.91),
         legend.title = element_blank())+
   xlab("Grouped PD")
-
 
 ```
 
@@ -457,7 +456,8 @@ speciesTree_plot$tip.label<- case_when(speciesTree_plot$tip.label == "Macaca_mul
 mamtree<-ggtree(speciesTree_plot, lwd=0.3)+
   geom_tiplab(fontface="italic", size=2, geom = "text")+ 
   xlim(0,200) +
-  theme(plot.margin = unit(c(0, 0, 0,0), "cm")) 
+  theme(plot.margin = unit(c(0, 0, 0,0), "cm"))+
+  geom_treescale(width=20, x=0, y=0.05, offset=0.15, fontsize=2, linesize=0.35)
 
 ```
 
@@ -465,14 +465,15 @@ mamtree<-ggtree(speciesTree_plot, lwd=0.3)+
 ```{r new3}
 
 # Construct plot 3
-fig2A<-fig("../figures/npc_peaks_pleio_base.pdf", 
+fig2A<-fig("../../figures/npc_peaks_pleio_base.pdf", 
             b_margin = ggplot2::margin(-10,0,-10,-10), link_dim = T)+
   theme(plot.margin = margin(0,0,0,0))
 
 fig3_top<-plot_grid(fig2A+theme(axis.text = element_text(color="black")),
                     NULL, peakOL_plot_NPCs+theme(legend.position="top"), 
                     rel_widths=c(1,0.06,1.34), ncol=3,
-                    scale=c(0.9,1, 1), labels=c("A","","B"), label_size=12, label_x = c(0,-0.05))
+                    scale=c(0.9,1, 1), labels=c("A","","B"), 
+                    label_size=12, label_x = c(0,-0.05))
 
 fig3_middle<-plot_grid(mamtree,evoage, rel_widths = c(1,1.3), scale = c(0.8, 1), labels=c("C","D"), label_size=12, label_x = c(0,-0.05))
 
@@ -482,7 +483,7 @@ fig3_bottom<-plot_grid(lfc_npc_summary+theme(legend.position=c(0.75,0.87)),
                 
 
 plot_grid(fig3_top, NULL, fig3_middle,NULL, fig3_bottom, ncol=1, rel_heights=c(1,0.05,0.85,0.05,0.85))
-ggsave(file="../figures/new_figure3.pdf",width =162.5*0.75, height=160, units = "mm")
+ggsave(file="../../figures/Fig3.pdf",width =162.5*0.75, height=160, units = "mm")
 
 ```
 
@@ -491,7 +492,6 @@ ggsave(file="../figures/new_figure3.pdf",width =162.5*0.75, height=160, units = 
 
 ### Supplementary figure
 Some heatmaps and odds
-
 
 ```{r odds_npcs}
 
@@ -558,7 +558,7 @@ peakOL_plot_machum_NPCs <- stringent_set %>%
   geom_col()+#position=position_dodge())+
   scale_fill_manual(values=c("Macaque-specific"="#D1D1DC","Human-specific"="#8B8BA7","Conserved"="#69698C")) +
   facet_grid(.~assignment)+
-  ylab("Fraction of CREs")+
+  ylab("Number of CREs")+
   xlab("PD")
 
 

@@ -5,7 +5,7 @@
 # check if high PD is more conserved (more 1s)
 
 
-setwd("/data/share/htp/pleiotropy/paper_data/")
+#setwd("/data/share/htp/pleiotropy/paper_data/")
 library(tidyverse)
 library(data.table)
 library(plyranges)
@@ -15,6 +15,7 @@ library(readxl)
 source("scripts/helper_functions.R")
 source("ATACseq/scripts/functions.R")
 source("ATACseq/scripts/helper_functions.R")
+mammaltree<-read.tree("/data/share/htp/TRNP1/paper_data/Co-evolution-TRNP1-and-GI/protein/trees/mammaltree.txt")
 
 specificityColors <- c( "#A3753B", "#CC9B57", "#E7CF97", "#F8EDD0", "#F7F7F7", "#D2EEEA", "#99D7CE", "#5DACA5", "#33847E")
 names(specificityColors) <-  c(1:9)
@@ -43,12 +44,11 @@ basic_theme_ins2<-  theme(axis.title=element_text(size=8),
 # Get liver CRE coordinates (with PD) -------------------------------------
 
 # need to select collapsed_region_ids from all livers in 4 species that 
-
 # these are macaque collapsed CREs
 hummac<-readRDS("Roller2021/chipseq_OL_humJamm_mac_collapsed.rds") %>% 
   dplyr::select(region_id, collapsed_region_id) %>% 
   left_join(readRDS("Roller2021/chipseq_macregs_collapsed.rds")) %>% 
-  right_join(readRDS("general/region_summary/jamm_region_info_full.rds") %>%
+  right_join(readRDS("roadmap_DHS_summaries/region_summary/jamm_region_info_full.rds") %>%
               dplyr::select(region_id, total))
 
 
@@ -111,14 +111,15 @@ liverPD_TFBS<-join_overlap_left(as_granges(liverCREs_mmul10), as_granges(tfbs_mm
   dplyr::mutate(
     n_TFspecies = sum(as.numeric(strsplit(as.character(shared_status_hsap_mmul_mmus_rnor_cfam), "")[[1]])),
     macaque=ifelse(substring(as.character(shared_status_hsap_mmul_mmus_rnor_cfam), 2, 2) == "1",T,F),
-    TF = word(CRM_or_singleton_name, 1,1,":"))
+    TF = word(CRM_or_singleton_name, 1,1,":"),
+    TF = ifelse(TF=="HNF6", "ONECUT1", TF))
 
 saveRDS(liverPD_TFBS, "Ballester2014/summarized_PD1_PD9_TFBS_mmul10.rds")
 
 
 
 pProps<-ggplot(liverPD_TFBS %>% 
-                 mutate(type = ifelse(type=='liver-specific','liver-\nspecific', type)),  #PD = ifelse(type=="pleiotropic","9","1")),
+                 mutate(type = ifelse(type=='liver-specific','liver-\nspecific', type)),
                aes(x = type, fill = as.factor(n_TFspecies)))+
   geom_bar(position="fill")+
   theme_bw()+
@@ -133,10 +134,6 @@ pProps<-ggplot(liverPD_TFBS %>%
   basic_theme_ins2+
   theme(axis.text = element_text(color="black"))
 pProps
-
-ggsave("Roller2021/figures/nSpecies_vs_TFrepertoire.png", height=3, width=4.1)
-ggsave("Roller2021/figures/nSpecies_vs_TFrepertoire.pdf", height=3, width=4.1)
-
 
 
 
@@ -163,24 +160,19 @@ BallesterSpeciesTree<-drop.tip(mammaltree, mammaltree$tip.label[!mammaltree$tip.
 BallesterSpeciesTree_plot<-BallesterSpeciesTree
 BallesterSpeciesTree_plot$tip.label<- case_when(BallesterSpeciesTree_plot$tip.label == "Homo_sapiens" ~ "Human",
                                                 BallesterSpeciesTree_plot$tip.label == "Macaca_mulatta" ~ "Macaque",
-                                                BallesterSpeciesTree_plot$tip.label == "Felis_catus" ~ "Cat",
                                                 BallesterSpeciesTree_plot$tip.label == "Canis_lupus" ~ "Dog", 
-                                                BallesterSpeciesTree_plot$tip.label == "Equus_ferus" ~ "Horse", 
                                                 BallesterSpeciesTree_plot$tip.label == "Mus_musculus" ~ "Mouse", 
-                                                BallesterSpeciesTree_plot$tip.label == "Rattus_norvegicus" ~ "Rat",
-                                                BallesterSpeciesTree_plot$tip.label == "Oryctolagus_cuniculus" ~ "Rabbit", 
-                                                BallesterSpeciesTree_plot$tip.label == "Sus_scrofa" ~ "Pig", 
-                                                BallesterSpeciesTree_plot$tip.label == "Monodelphis_domestica" ~ "Opossum")
+                                                BallesterSpeciesTree_plot$tip.label == "Rattus_norvegicus" ~ "Rat"
+                                                )
 
 ggtree(BallesterSpeciesTree_plot, color="grey60", lwd=0.75)+geom_tiplab()+xlim(0,150) 
 
 mamtree2<-ggtree(BallesterSpeciesTree_plot, lwd=0.3)+
   geom_tiplab(fontface="italic", size=2.5, geom = "text")+ 
   xlim(0,130) +
-  theme(plot.margin = unit(c(0, 0, 0,0), "cm")) 
+  theme(plot.margin = unit(c(0, 0, 0,0), "cm")) +
+  geom_treescale(width=20, x=0, y=0.05, offset=0.15, fontsize=2, linesize=0.35)
 mamtree2
-
-ggsave("Roller2021/figures/ballester_species_tree.png", height = 5*0.70, width=7*0.70)
 
 
 
@@ -199,7 +191,6 @@ treeLengthsBallester<-liverPD_TFBS_long %>%
   mutate(rel_tree_length=tree_length/max_tree_length) %>%
   ungroup() 
 
-# recheck where I loose like 500 TF-CRE pairs rel to liverPD_TFBS
 saveRDS(treeLengthsBallester, "Ballester2014/PhyloTreeLengths.rds")
 
 
@@ -224,8 +215,6 @@ p_age_all<-treeLengthsBallester %>%
   group_by(type) %>% 
   summarize(mean = mean(rel_tree_length),
             sem = sd(rel_tree_length)/sqrt(length(type))) %>% 
- # dplyr::mutate(#TF = factor(TF, levels=c("CEBPA","FOXA1","HNF4A","HNF6","CRM")),
- #               PD = ifelse(type=="pleiotropic","9","1")) %>% 
   mutate(type = ifelse(type=='liver-specific','liver-\nspecific', type)) %>% 
   ggplot(aes(x=type, y=mean, color=type))+
   geom_point()+
@@ -236,8 +225,7 @@ p_age_all<-treeLengthsBallester %>%
   scale_color_manual(values=c(specificityColors[[1]],specificityColors[[9]]))+
   basic_theme_ins2+
   theme(legend.position = "none",
-        axis.text = element_text(color="black"))#+
-  #facet_grid(.~TF)
+        axis.text = element_text(color="black"))
 
 
 
@@ -245,9 +233,8 @@ pTFage<-treeLengthsBallester %>%
   group_by(type, TF) %>% 
   summarize(mean = mean(rel_tree_length),
             sem = sd(rel_tree_length)/sqrt(length(type))) %>% 
-  dplyr::mutate(TF = factor(TF, levels=c("CEBPA","FOXA1","HNF4A","HNF6","CRM")),
-                type = ifelse(type=='liver-specific','liver-\nspecific', type)) %>% #,
-               # PD = ifelse(type=="pleiotropic","9","1")) %>% 
+  dplyr::mutate(TF = factor(TF, levels=c("CEBPA","FOXA1","HNF4A","ONECUT1","CRM")),
+                type = ifelse(type=='liver-specific','liver-\nspecific', type)) %>%
   ggplot(aes(x=type, y=mean, color=type))+
   geom_point()+
   geom_errorbar(aes(ymin = mean-sem, ymax=mean+sem), width=0.2)+
@@ -261,13 +248,11 @@ pTFage<-treeLengthsBallester %>%
   facet_grid(.~TF)
 pTFage
 
-ggsave("Roller2021/figures/ballester_evoAge_perTF.png", height=3, width=10)
-
 
 
 
 ptop<-plot_grid(mamtree2,pProps, p_age_all, ncol=3,labels=c("A","B","C"), label_size = 12, scale=c(0.9,1,1), rel_widths = c(0.9,1,0.85))
-psuppTF<-plot_grid(ptop,pTFage, ncol=1, labels=c("","D"), label_size=12)#, rel_heights=c(1.2,1))
+psuppTF<-plot_grid(ptop,pTFage, ncol=1, labels=c("","D"), label_size=12)
 psuppTF
-ggsave("figures/TFBS_evoAge.pdf", width =162.5, height=113, units = "mm")
+ggsave("../figures/TFBS_evoAge.pdf", width =162.5, height=113, units = "mm")
 

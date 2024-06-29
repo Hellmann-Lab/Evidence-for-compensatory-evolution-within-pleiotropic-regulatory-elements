@@ -386,6 +386,7 @@ jamm_region_identifiers<-readRDS("roadmap_DHS_summaries/region_summary/jamm_regi
 
 macToOther_merged_collapsed<-readRDS("Roller2021/chipseq_PD.rds")
 macregs_collapsed<-readRDS("Roller2021/chipseq_macregs_collapsed.rds")
+OL_jamm_mmul_col<-readRDS("Roller2021/chipseq_OL_humJamm_mac_collapsed.rds")
 
 allSpecies<-bind_rows(macToOther_merged_collapsed) %>% 
   bind_rows(macregs_collapsed %>% dplyr::inner_join(OL_jamm_mmul_col) %>% 
@@ -511,7 +512,8 @@ mamtree<-ggtree(speciesTree_plot, lwd=0.3)+
   geom_tiplab(fontface="italic", size=2, geom = "text")+ 
   xlim(0,200) +
   #basic_theme_ins2+
-  theme(plot.margin = unit(c(0, 0, 0,0), "cm")) 
+  theme(plot.margin = unit(c(0, 0, 0,0), "cm")) +
+  geom_treescale(width=20, x=0.05, y=10, offset=0.05)
 
 mamtree
 ggsave("Roller2021/figures/species_tree.pdf", height = 5*0.85, width=7*0.85)

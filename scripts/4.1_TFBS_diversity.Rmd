@@ -94,7 +94,6 @@ expressedTFs_tissues<-readRDS("../ATACseq/cbust/expressedTFs_inTissues.rds")
 
 n_tissues_expressedTFs<-readRDS("../roadmap_expression_summaries/summarized_expression_allTissues.rds") %>%
   filter(gene_id %in% expressedTFs_tissues$gene_id) %>%
-  #inner_join(expressedTFs_tissues) %>%
   dplyr::group_by(gene_id) %>%
   dplyr::mutate(cnt=length(gene_id)) %>% 
   dplyr::ungroup() %>% 
@@ -109,8 +108,7 @@ p_TF_expr<-ggplot(n_tissues_expressedTFs %>% mutate(tissue = gsub("_"," ",tissue
        ylab( "# expressed TFs" )+
        theme_bw()+
   basic_theme_ins2+
-  theme(#legend.position = "bottom",
-        axis.title.y = element_blank(),
+  theme(axis.title.y = element_blank(),
         plot.margin = unit(c(5.5,1,5.5,5.5), "pt"),
         legend.spacing.x = unit(1,"mm"))
 
@@ -134,7 +132,6 @@ dd_10perc_exprTissues_filt<-data.table::fread("../ATACseq/cbust/top10perc_motifs
 dd_10perc_exprTissues<- dd_10perc_exprTissues_filt %>%
   calculate_per_region_TF_stats() %>%
   mutate(region_id = as.factor(region_id)) 
-
 
 TFBS_enhprom<-dd_10perc_exprTissues %>% 
   inner_join(DHS_to_gene %>% dplyr::select(region_id, assignment, total) %>% distinct()) 
@@ -202,44 +199,35 @@ div_df<-inner_join(
   drop_na() %>% 
   dplyr::mutate(total_shuffled= sample(total))
 
-ggplot(div_df, aes(x = log(diversityH)))+geom_histogram()
-ggplot(div_df, aes(x = diversityH))+geom_histogram()
+# simply plot the width and the gc content normalized diversity
+p_div_width <- ggline(div_df %>% mutate(label="TFBS diversity/width:", 
+                                        width_norm = diversityH/width),
+                 x = "total", y = "width_norm", 
+                 color = "assignment", palette = c("#9CA578","#3288BD"),
+                 add = "mean_se", point_size=0.00001, 
+                 plot_type="l", size = 0.7) +
+  theme_bw()+
+  basic_theme_ins2+
+  ylab(expression("TFBS diversity ("~e^H~") / width"))+
+  xlab("PD")+
+  theme(legend.title = element_blank(), legend.position = c(0.67, 0.14))
 
 
-#car::vif(mod_div)
-true_div<-fit_permutation_diversity(div_df, shuffle=F)
-shuffled_div<-lapply(1:30, function(x){
-  fit_permutation_diversity(div_df, shuffle=T)
-  })
+p_div_GC <- ggline(div_df %>% mutate(label="TFBS diversity/width:", 
+                                        width_norm = diversityH/GC_content),
+                 x = "total", y = "width_norm", 
+                 color = "assignment", palette = c("#9CA578","#3288BD"),
+                 add = "mean_se", point_size=0.00001, 
+                 plot_type="l", size = 0.7) +
+  theme_bw()+
+  basic_theme_ins2+
+  ylab(expression("TFBS diversity ("~e^H~") / GC content"))+
+  xlab("PD")+
+  theme(legend.title = element_blank(), legend.position = c(0.77, 0.14))
 
-shuffled_div_df<-bind_rows(shuffled_div, .id = "iteration") %>% 
-  group_by(Predictor) %>% 
-  dplyr::summarise(R2 = mean(R2),
-                   lowerCI_R2 = quantile(R2, probs= 0.01),
-                   upperCI_R2 = quantile(R2, probs = 0.99))
+p_div_norm<-plot_grid(p_div_width, p_div_GC, scale=0.98)
 
-
-combined_r2<-bind_rows(true_div %>% dplyr::mutate(type="Observed"),
-                       shuffled_div_df %>% dplyr::mutate(type="Shuffled"))
-
-preddiv<-combined_r2 %>% 
-  filter(Predictor!="(Intercept)") %>% 
-  dplyr::mutate(Predictor=gsub("Promoter","",Predictor),
-                Predictor=gsub("_"," ", Predictor),
-                Predictor=gsub("total", "PD", Predictor),
-                type = ifelse(type=="Observed","Actual","Shuffled PD")) %>% 
-  ggplot(aes(x=Predictor, y = R2, fill=type)) +
-  geom_point(size=1.8,colour="black",pch=21, position=position_dodge(width=0.44)) +
-  geom_errorbar(aes(ymin = lowerCI_R2, ymax = upperCI_R2), width=0.6, linewidth=0.3,
-                position = position_dodge(width=0.44))+
-  scale_fill_manual(values = c("Actual" = "#A28CA6",
-                                "Shuffled PD" = "white"))+
-  theme(axis.text = element_text(color="black"))+
-  coord_flip()+
-  ylab(expression(Partial~R^2)) +
-  labs(fill="Diversity\nprediction")+
-  xlab("")+
-  theme(legend.position = c(0.71,0.2))
+ggsave("../../figures/diversity_norm.pdf", p_div_norm, width =162.5*0.7, height=160*0.32, units = "mm")
 
 ```
 
