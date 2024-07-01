@@ -37,6 +37,7 @@ analysis scripts for this part, underlying **Figure 1** and
 **Supplemental Figures S1, S2** are the following:  
 
 [DHS peak calling](scripts/1.0_DHS_peakcalling)  
+[DHS peak filtering](scripts/1.0_JAMM_DA.R)  
 [DHS peak analyses](scripts/1.1_basics.Rmd)  
 [Expression data preparation](scripts/1.2_tissueExpression.Rmd)  
 [CRE to gene association](scripts/1.3_reg2gene.Rmd)  
@@ -60,7 +61,9 @@ different PDs (**Figure 3, Supplemental Figure S3**).
 [Process liftOff output](scripts/2.0_final_filter_liftoffgtf.R)  
 [Analyse cross-species gene expression](scripts/2.1_DE_analysis.R)  
 [Identify orthologous peaks](scripts/2.3_OL_filtering_DA.R)  
-[Do the integrated analyses](scripts/2.4_Species_openness.Rmd)  
+[Re-analyse CRE PD and activity conservation across mammals from Roller
+et al. 2021](scripts/2.4.0_analyse_roller2021.R)  
+[Do the integrated analyses](scripts/2.4.1_Species_openness.Rmd)  
 
 ### 3. Sequence conservation
 
@@ -94,7 +97,9 @@ S5** are listed below, more intermediate processing scripts can be found
 analyses](scripts/2.2_RLO_prepCbust.R)  
 [Quantify TFBS repertoire across PDs](scripts/4.1_TFBS_diversity.Rmd)  
 [Combine different conservation measures](scripts/4.2_combineAll.R)  
-[Generate main figure](scripts/4.3_TFBS_repertoire.Rmd)  
+[Re-analyse TFBS conservation across mammals from Ballester et
+al. 2014](scripts/4.3.0_analyse_ballester.R)  
+[Generate main figure](scripts/4.3.1_TFBS_repertoire.Rmd)  
 
 ### 5. Example promoter analysis
 
