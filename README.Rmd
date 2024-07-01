@@ -66,7 +66,7 @@ We use [INSIGHT](https://compgen.cshl.edu/INSIGHT/) to quantify the selection ac
 
 
 ### 4. Transcription factor binding site analyses
-We quantified TFBS repertoire and it's conservation between human and cynomolgus macaque across >90\% of all CREs in this study. First, sequences were extracted and provided to [Cluster-Buster](https://github.com/weng-lab/cluster-buster) along with expressed TF position weight matrices to identify their binding positions.  For each CRE, it's repertoire similarity was measured. Furthermore, all orthologous sequence binding sites were aligned between species and their positional conservation was quantified. The most important scripts to generate **Figures 2, 6 and Supplemental Figure S5** are listed below, more intermediate processing scripts can be found [here](ATACseq/scripts).
+We quantified TFBS repertoire and it's conservation between human and cynomolgus macaque across >90\% of all CREs in this study. First, sequences were extracted and provided to [Cluster-Buster](https://github.com/weng-lab/cluster-buster) along with expressed TF position weight matrices to identify their binding positions.  For each CRE, it's repertoire similarity was measured. Furthermore, all orthologous sequence binding sites were aligned between species and their positional conservation was quantified. The most important scripts to generate **Figures 2, 6 and Supplemental Figures S5, S7** are listed below, more intermediate processing scripts can be found [here](ATACseq/scripts).
 
 [Extract orthologous sequences for TFBS analyses](scripts/2.2_RLO_prepCbust.R)\
 [Quantify TFBS repertoire across PDs](scripts/4.1_TFBS_diversity.Rmd)\

@@ -89,9 +89,9 @@ expressed TF position weight matrices to identify their binding
 positions. For each CRE, it’s repertoire similarity was measured.
 Furthermore, all orthologous sequence binding sites were aligned between
 species and their positional conservation was quantified. The most
-important scripts to generate **Figures 2, 6 and Supplemental Figure
-S5** are listed below, more intermediate processing scripts can be found
-[here](ATACseq/scripts).
+important scripts to generate **Figures 2, 6 and Supplemental Figures
+S5, S7** are listed below, more intermediate processing scripts can be
+found [here](ATACseq/scripts).
 
 [Extract orthologous sequences for TFBS
 analyses](scripts/2.2_RLO_prepCbust.R)  
